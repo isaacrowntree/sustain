@@ -79,8 +79,8 @@ export class PracticeScene {
     this.scene.fog = new THREE.Fog(NIGHT, 9, 36);
 
     this.camera = new THREE.PerspectiveCamera(56, 1, 0.1, 100);
-    this.camera.position.set(0, 2.4, 4.6);
-    this.camera.lookAt(0, 0.5, -7);
+    this.camera.position.set(0, 3.1, 4.4);
+    this.camera.lookAt(0, 0.35, -8);
 
     this.scene.add(new THREE.AmbientLight(0xffe9cf, 0.4));
     this.glow = new THREE.PointLight(0xe8833a, 0.8, 20);
@@ -280,6 +280,7 @@ export class PracticeScene {
           emissive: color,
           emissiveIntensity: 0.9,
           roughness: 0.3,
+          transparent: true,
         }),
       );
       fill.scale.z = 0.0001;
@@ -328,8 +329,10 @@ export class PracticeScene {
       const mat = mesh.material as THREE.MeshStandardMaterial;
       const fillMat = fill.material as THREE.MeshStandardMaterial;
       if (i < currentIndex) {
+        // What's played stays visible but recedes, so the road ahead reads.
         mat.opacity = 0.08;
-        fillMat.emissiveIntensity = 0.18;
+        fillMat.emissiveIntensity = 0.2;
+        fillMat.opacity = 0.5;
         const len = Math.max(0.4, seg.seconds * SCALE);
         fill.scale.z = len;
         fill.position.z = -(startAt * SCALE + len / 2);
@@ -339,6 +342,7 @@ export class PracticeScene {
         fill.scale.z = Math.max(0.0001, len * frac);
         fill.position.z = -(startAt * SCALE + (len * frac) / 2);
         fillMat.emissiveIntensity = playing ? 1.1 + this.smoothedRms * 2.4 : 0.4;
+        fillMat.opacity = 1;
         mat.opacity = 0.5;
       } else if (i === currentIndex + 1 && remaining < 4) {
         // Telegraph the next segment one breath before it arrives.
@@ -406,8 +410,8 @@ export class PracticeScene {
     this.stars.rotation.y = t * 0.004;
     if (!this.reduceMotion) {
       this.camera.position.x = Math.sin(t * 0.13) * 0.18;
-      this.camera.position.y = 2.4 + Math.sin(t * 0.21) * 0.05;
-      this.camera.lookAt(0, 0.5, -7);
+      this.camera.position.y = 3.1 + Math.sin(t * 0.21) * 0.05;
+      this.camera.lookAt(0, 0.35, -8);
     }
 
     this.bloom.strength = 0.6 + this.envSlow * 0.8 + energy * 0.15 + this.flash * 0.2;
