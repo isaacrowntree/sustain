@@ -4,6 +4,7 @@ import {
   addDays,
   compileSession,
   completedDrillSet,
+  drillsDoneOn,
   pendingFirstSessionDrills,
   mondayOf,
   programDayFor,
@@ -115,7 +116,19 @@ export function renderHome(
   const todayIso = today();
   const day = programDayFor(pack, state.startDate, todayIso);
   const a = adherence(pack, state, todayIso);
-  const doneToday = state.sessions.some((s) => s.date === todayIso);
+  const doneDrills = drillsDoneOn(state, todayIso);
+  const startedToday = doneDrills.size > 0;
+
+  // What's left of today, after anything already finished in an earlier sitting.
+  const remaining = day.phase
+    ? compileSession(pack, day, unlockedDrills(pack, state), {
+        firstSessionOfPhase: pendingFirstSessionDrills(state, day.phase).length > 0,
+        completedDrills: completedDrillSet(state),
+        makeup: day.isRestDay,
+        skipDrills: doneDrills,
+      })
+    : null;
+  const doneToday = startedToday && (!remaining || remaining.segments.length === 0);
 
   let action: HTMLElement;
   if (day.dayIndex < 0) {
@@ -167,14 +180,10 @@ export function renderHome(
       );
     }
   } else {
-    const session = compileSession(pack, day, unlockedDrills(pack, state), {
-      firstSessionOfPhase: day.phase ? pendingFirstSessionDrills(state, day.phase).length > 0 : false,
-      completedDrills: completedDrillSet(state),
-    });
     const btn = el(
       'button',
       { class: 'start-btn' },
-      day.isBossSession ? 'Start assessment' : 'Start session',
+      startedToday ? 'Continue session' : day.isBossSession ? 'Start assessment' : 'Start session',
     );
     btn.addEventListener('click', cb.onStartSession);
     action = el(
@@ -184,8 +193,10 @@ export function renderHome(
       el(
         'p',
         { class: 'sub' },
-        session
-          ? `About ${fmtMinutes(session.totalSeconds)} today${day.isBossSession ? ' — assessment day' : ''}.`
+        remaining
+          ? startedToday
+            ? `${fmtMinutes(remaining.totalSeconds)} left of today — you've already done ${doneDrills.size === 1 ? 'one drill' : `${doneDrills.size} drills`}.`
+            : `About ${fmtMinutes(remaining.totalSeconds)} today${day.isBossSession ? ' — assessment day' : ''}.`
           : '',
       ),
       btn,

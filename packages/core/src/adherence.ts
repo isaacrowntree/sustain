@@ -37,6 +37,9 @@ export function adherence(pack: InstrumentPack, state: ProgressState, today: ISO
   const byWeek = new Map<string, number>();
 
   for (const s of state.sessions) {
+    // A day only counts toward the week once its work is substantially
+    // done — a two-minute look at the app isn't a practice day.
+    if (s.counted === false) continue;
     const wk = mondayOf(s.date);
     byWeek.set(wk, (byWeek.get(wk) ?? 0) + 1);
   }

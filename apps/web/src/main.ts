@@ -4,6 +4,7 @@ import { validatePack } from '@sustain/pack-sdk';
 import {
   compileSession,
   completedDrillSet,
+  drillsDoneOn,
   pendingFirstSessionDrills,
   programDayFor,
   recordDrillCompletion,
@@ -70,11 +71,18 @@ function startSession(): void {
   const sessionDate = today();
   const day = programDayFor(pack, state.startDate, sessionDate);
   const outstanding = day.phase ? pendingFirstSessionDrills(state, day.phase) : [];
-  const session = compileSession(pack, day, unlockedDrills(pack, state), {
-    firstSessionOfPhase: outstanding.length > 0,
-    completedDrills: completedDrillSet(state),
-    makeup: day.isRestDay,
-  });
+  const compile = (skipDrills?: Set<string>) =>
+    compileSession(pack, day, unlockedDrills(pack, state), {
+      firstSessionOfPhase: outstanding.length > 0,
+      completedDrills: completedDrillSet(state),
+      makeup: day.isRestDay,
+      skipDrills,
+    });
+
+  // Pick up where the day left off; if there's nothing left to do, a
+  // deliberate repeat gets the whole session again.
+  const remaining = compile(drillsDoneOn(state, sessionDate));
+  const session = remaining && remaining.segments.length > 0 ? remaining : compile();
   if (!session) return showHome();
 
   const recordingKeyPrefix = `${pack.id}:${sessionDate}`;
@@ -142,20 +150,24 @@ function finishSession(
   if (!state) return showHome();
   const prFlashes: string[] = [];
 
-  // A meaningfully attempted session counts; a bailed-in-two-minutes one doesn't.
-  const counts = !result.aborted || result.completedSeconds >= session.totalSeconds * 0.5;
-  if (counts) {
-    recordSession(state, {
-      date,
-      dayIndex: day.dayIndex,
-      completedSeconds: result.completedSeconds,
-      playSeconds: result.playSeconds,
-      verified: result.verified,
-      isBoss: day.isBossSession,
-    });
-    for (const drillId of result.completedDrillIds) {
-      recordDrillCompletion(state, drillId);
-    }
+  // Everything done is kept, however short the sitting — that's what makes
+  // a day resumable. Whether the DAY counts toward the week is a separate
+  // question, answered by how much of it is done in total.
+  const alreadyDone = state.sessions.find((s) => s.date === date)?.completedSeconds ?? 0;
+  const counts =
+    !result.aborted || alreadyDone + result.completedSeconds >= session.totalSeconds * 0.5;
+  recordSession(state, {
+    date,
+    dayIndex: day.dayIndex,
+    completedSeconds: result.completedSeconds,
+    playSeconds: result.playSeconds,
+    verified: result.verified,
+    isBoss: day.isBossSession,
+    completedDrillIds: result.completedDrillIds,
+    counted: counts,
+  });
+  for (const drillId of result.completedDrillIds) {
+    recordDrillCompletion(state, drillId);
   }
 
   // Mic-verified runs become records automatically.
@@ -180,21 +192,25 @@ function finishSession(
 }
 
 /**
- * A recording drill that left no audio behind wasn't really done — the
- * microphone was off, or permission was declined. Put it back on the
- * schedule so the day-one recording isn't lost to a silent failure.
+ * The recording store is the truth about recording drills, not the
+ * completion count. Audio present means it's done however the session
+ * ended; audio absent means it isn't, however the session was marked.
  */
 async function reconcileRecordings(state: ProgressState): Promise<boolean> {
   const recordingDrills = pack.drills
     .filter((d) => d.steps.some((s) => s.kind === 'record'))
-    .map((d) => d.id)
-    .filter((id) => (state.drillCompletions[id] ?? 0) > 0);
+    .map((d) => d.id);
   if (recordingDrills.length === 0) return false;
 
   const keys = await listRecordingKeys();
   let changed = false;
   for (const id of recordingDrills) {
-    if (!keys.some((k) => k.endsWith(`:${id}`))) {
+    const hasAudio = keys.some((k) => k.endsWith(`:${id}`));
+    const marked = (state.drillCompletions[id] ?? 0) > 0;
+    if (hasAudio && !marked) {
+      state.drillCompletions[id] = 1;
+      changed = true;
+    } else if (!hasAudio && marked) {
       state.drillCompletions[id] = 0;
       changed = true;
     }

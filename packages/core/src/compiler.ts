@@ -119,6 +119,12 @@ export interface CompileOptions {
    * never captured anything is offered again rather than silently skipped.
    */
   completedDrills?: Set<string>;
+  /**
+   * Drills already finished today. They're dropped from the compiled
+   * session, so returning to a part-done day picks up what's left instead
+   * of asking for the whole thing again.
+   */
+  skipDrills?: Set<string>;
 }
 
 /**
@@ -150,7 +156,7 @@ export function compileSession(
 
   for (const slot of phase.sessionPlan) {
     const drill = pickDrill(slot.drills, unlockedDrillIds, drillsById, day.dayIndex);
-    if (!drill) continue;
+    if (!drill || options.skipDrills?.has(drill.id)) continue;
     appendDrill(segments, drill, slot.role, slotMinutes(slot, t) * 60);
   }
 

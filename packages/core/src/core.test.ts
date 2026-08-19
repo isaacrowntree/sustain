@@ -4,6 +4,7 @@ import { programDayFor } from './calendar.js';
 import { compileSession } from './compiler.js';
 import {
   completedDrillSet,
+  drillsDoneOn,
   emptyProgress,
   pendingFirstSessionDrills,
   recordDrillCompletion,
@@ -215,11 +216,41 @@ describe('progress + adherence', () => {
     expect(a.totalSessions).toBe(5);
   });
 
-  it('keeps one session per day, preferring the fuller one', () => {
+  it('accumulates a day practised in several sittings into one record', () => {
     const state = emptyProgress(pack.id, START);
-    recordSession(state, { date: START, dayIndex: 0, completedSeconds: 300, playSeconds: 200, verified: false, isBoss: false });
-    recordSession(state, { date: START, dayIndex: 0, completedSeconds: 900, playSeconds: 700, verified: false, isBoss: false });
+    recordSession(state, {
+      date: START, dayIndex: 0, completedSeconds: 300, playSeconds: 200,
+      verified: false, isBoss: false, counted: false, completedDrillIds: ['lip-flutter'],
+    });
+    recordSession(state, {
+      date: START, dayIndex: 0, completedSeconds: 900, playSeconds: 700,
+      verified: true, isBoss: false, counted: true, completedDrillIds: ['drone-holds', 'lip-flutter'],
+    });
+
     expect(state.sessions).toHaveLength(1);
-    expect(state.sessions[0]!.completedSeconds).toBe(900);
+    const rec = state.sessions[0]!;
+    expect(rec.completedSeconds).toBe(1200);
+    expect(rec.playSeconds).toBe(900);
+    expect(rec.verified).toBe(true);
+    expect(rec.counted).toBe(true);
+    expect(new Set(rec.completedDrillIds)).toEqual(new Set(['lip-flutter', 'drone-holds']));
+    expect(drillsDoneOn(state, START).has('drone-holds')).toBe(true);
+  });
+
+  it('leaves an abandoned day out of the week until enough of it is done', () => {
+    const state = emptyProgress(pack.id, START);
+    recordSession(state, {
+      date: START, dayIndex: 0, completedSeconds: 120, playSeconds: 60,
+      verified: false, isBoss: false, counted: false,
+    });
+    expect(adherence(pack, state, START).totalSessions).toBe(1);
+    expect(adherence(pack, state, START).weeks[0]!.sessionsDone).toBe(0);
+
+    // Coming back later and finishing the work makes the day count.
+    recordSession(state, {
+      date: START, dayIndex: 0, completedSeconds: 900, playSeconds: 700,
+      verified: false, isBoss: false, counted: true,
+    });
+    expect(adherence(pack, state, START).weeks[0]!.sessionsDone).toBe(1);
   });
 });

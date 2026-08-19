@@ -11,6 +11,13 @@ export interface SessionRecord {
   /** True when a mic analyzer verified the play time. */
   verified: boolean;
   isBoss: boolean;
+  /** Drills finished on this date, accumulated across every run of it. */
+  completedDrillIds?: string[];
+  /**
+   * Whether the day's work is substantial enough to count toward the week.
+   * Absent on older records, which are treated as counting.
+   */
+  counted?: boolean;
 }
 
 export interface MetricEntry {
@@ -78,16 +85,36 @@ export function recordMetric(
   return { isPersonalRecord: false, previousBest: best.value };
 }
 
+/**
+ * One record per calendar day, but a day can be practised in several
+ * sittings — so a repeat merges into the existing record rather than
+ * replacing it. Work already done is never lost by coming back to it.
+ */
 export function recordSession(state: ProgressState, record: SessionRecord): void {
   const existing = state.sessions.findIndex((s) => s.date === record.date);
   if (existing >= 0) {
-    // One session per calendar day; a repeat replaces if it did more.
     const prev = state.sessions[existing]!;
-    if (record.completedSeconds > prev.completedSeconds) state.sessions[existing] = record;
+    state.sessions[existing] = {
+      ...prev,
+      // Two sittings on one day add up; that's what you actually practised.
+      completedSeconds: prev.completedSeconds + record.completedSeconds,
+      playSeconds: prev.playSeconds + record.playSeconds,
+      verified: prev.verified || record.verified,
+      isBoss: prev.isBoss || record.isBoss,
+      counted: (prev.counted ?? true) || (record.counted ?? true),
+      completedDrillIds: [
+        ...new Set([...(prev.completedDrillIds ?? []), ...(record.completedDrillIds ?? [])]),
+      ],
+    };
     return;
   }
   state.sessions.push(record);
   state.sessions.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** Drills already finished on a given date, across all of that day's runs. */
+export function drillsDoneOn(state: ProgressState, date: ISODate): Set<string> {
+  return new Set(state.sessions.find((s) => s.date === date)?.completedDrillIds ?? []);
 }
 
 export function recordDrillCompletion(state: ProgressState, drillId: string): void {

@@ -4,6 +4,7 @@ export { compileSession, type CompiledSession, type CompileOptions, type Segment
 export {
   emptyProgress,
   completedDrillSet,
+  drillsDoneOn,
   pendingFirstSessionDrills,
   hasSessionInPhase,
   recordMetric,
