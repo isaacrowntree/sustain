@@ -66,8 +66,8 @@ function showHome(): void {
     onStartSession() {
       startSession();
     },
-    onMarkDone() {
-      markTodayDone();
+    onMarkDone(minutes) {
+      markTodayDone(minutes);
     },
     onViewProgram() {
       showProgram();
@@ -80,7 +80,7 @@ function showHome(): void {
  * away from the screen, or the app's bookkeeping lost track. The record
  * should follow what you actually did.
  */
-function markTodayDone(): void {
+function markTodayDone(minutes: number): void {
   const state = current;
   if (!state) return;
   const date = today();
@@ -97,12 +97,16 @@ function markTodayDone(): void {
   const drillIds = [
     ...new Set(session.segments.map((s) => s.drillId).filter((id) => !id.startsWith('boss-'))),
   ];
-  const alreadyDone = state.sessions.find((s) => s.date === date)?.completedSeconds ?? 0;
+  const existing = state.sessions.find((s) => s.date === date);
+  // Records merge by adding, so credit only the shortfall — the day ends up
+  // reading exactly the number of minutes you say you practised.
+  const statedSeconds = Math.round(minutes * 60);
+  const playRatio = session.totalSeconds > 0 ? session.playSeconds / session.totalSeconds : 0.7;
   recordSession(state, {
     date,
     dayIndex: day.dayIndex,
-    completedSeconds: Math.max(0, session.totalSeconds - alreadyDone),
-    playSeconds: session.playSeconds,
+    completedSeconds: Math.max(0, statedSeconds - (existing?.completedSeconds ?? 0)),
+    playSeconds: Math.max(0, Math.round(statedSeconds * playRatio) - (existing?.playSeconds ?? 0)),
     verified: false,
     isBoss: day.isBossSession,
     completedDrillIds: drillIds,

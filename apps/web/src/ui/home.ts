@@ -26,7 +26,7 @@ export interface HomeCallbacks {
   onBegin(): void;
   onStartSession(): void;
   /** Credit today's session without playing it through the app. */
-  onMarkDone(): void;
+  onMarkDone(minutes: number): void;
   /** Open the full sixteen-week curriculum. */
   onViewProgram(): void;
 }
@@ -122,6 +122,7 @@ export function renderHome(
   const a = adherence(pack, state, todayIso);
   const doneDrills = drillsDoneOn(state, todayIso);
   const startedToday = doneDrills.size > 0;
+  const todaySeconds = state.sessions.find((s) => s.date === todayIso)?.completedSeconds ?? 0;
 
   // What's left of today, after anything already finished in an earlier sitting.
   const remaining = day.phase
@@ -246,10 +247,54 @@ export function renderHome(
 
   // Escape hatch: you practised, the app didn't see it. The record should
   // follow the practice, not the other way around.
-  if (remaining && remaining.segments.length > 0 && !day.isComplete && day.dayIndex >= 0) {
-    const markBtn = el('button', { class: 'ghost mark-done' }, 'Mark today as done');
-    markBtn.addEventListener('click', cb.onMarkDone);
-    action.append(markBtn);
+  if (!day.isComplete && day.dayIndex >= 0 && day.phase) {
+    // Prefilled with today's full session, but you say how long you played —
+    // the app should record what happened, not what it managed to observe.
+    const fullToday = compileSession(pack, day, unlockedDrills(pack, state), {
+      firstSessionOfPhase: pendingFirstSessionDrills(state, day.phase).length > 0,
+      completedDrills: completedDrillSet(state),
+      makeup: day.isRestDay,
+    });
+    const defaultMinutes = Math.max(
+      Math.round((fullToday?.totalSeconds ?? 0) / 60),
+      Math.round(todaySeconds / 60),
+    );
+
+    const markBtn = el('button', { class: 'ghost mark-done' }, 'I practised — mark today done');
+    const input = el('input', {
+      type: 'number',
+      min: '1',
+      max: '240',
+      inputmode: 'numeric',
+      'aria-label': 'Minutes practised today',
+    }) as HTMLInputElement;
+    input.value = String(defaultMinutes);
+    const save = el('button', { class: 'secondary' }, 'Save');
+    const form = el(
+      'div',
+      { class: 'mark-form' },
+      el('span', { class: 'sub' }, 'Minutes practised today'),
+      input,
+      save,
+    );
+    form.hidden = true;
+
+    markBtn.addEventListener('click', () => {
+      form.hidden = false;
+      markBtn.hidden = true;
+      input.focus();
+      input.select();
+    });
+    const submit = () => {
+      const minutes = Number(input.value);
+      if (Number.isFinite(minutes) && minutes > 0) cb.onMarkDone(minutes);
+    };
+    save.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+    });
+
+    action.append(markBtn, form);
   }
 
   root.replaceChildren(

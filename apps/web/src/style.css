@@ -143,6 +143,16 @@ button.mark-done {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+.mark-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.mark-form input[type='number'] { width: 92px; font-size: 1.05rem; padding: 8px 12px; }
+.mark-form button { padding: 10px 18px; }
+
 button.see-all {
   align-self: flex-start;
   margin-top: 12px;
