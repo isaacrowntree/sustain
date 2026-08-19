@@ -10,13 +10,15 @@ const SCALE = 0.55;
 const LANE_WIDTH = 2.2;
 const NIGHT = 0x0f0c08;
 
+// Slightly desaturated so the ember stays the one saturated light source.
 const ROLE_COLORS: Record<string, number> = {
-  warmup: 0x3fb8af,
-  skill: 0xe8833a,
-  endurance: 0xa78bfa,
-  cooldown: 0x7fb069,
-  assessment: 0xff6b5e,
+  warmup: 0x4aa39b,
+  skill: 0xcf7f45,
+  endurance: 0x9a86d8,
+  cooldown: 0x7aa570,
+  assessment: 0xe0685f,
 };
+const ASH = new THREE.Color(0x453b2e);
 
 const PHASE_TINTS: Record<string, number> = {
   foundation: 0xe8833a,
@@ -43,7 +45,19 @@ export class PracticeScene {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private lane = new THREE.Group();
-  private blocks: { mesh: THREE.Mesh; fill: THREE.Mesh; seg: Segment; startAt: number }[] = [];
+  private blocks: { mesh: THREE.Mesh; fill: THREE.Mesh; seg: Segment; startAt: number; baseOpacity: number }[] = [];
+  private strikeLine!: THREE.Mesh;
+  private strikeMat!: THREE.MeshBasicMaterial;
+  private halo!: THREE.Mesh;
+  private haloMat!: THREE.MeshBasicMaterial;
+  private trail!: THREE.Line;
+  private trailGeo!: THREE.BufferGeometry;
+  private trailHistory: { h: number; on: boolean }[] = [];
+  private lastTrailSample = 0;
+  /** Fast-attack, slow-release envelope for tiered world reactivity. */
+  private envSlow = 0;
+  /** Boundary "consume" flash, decays after each segment crosses the ember. */
+  private flash = 0;
   private motes!: THREE.Points;
   private moteMat!: THREE.PointsMaterial;
   private stars!: THREE.Points;
@@ -97,6 +111,28 @@ export class PracticeScene {
     this.ember.position.set(0, 0.42, 0);
     this.scene.add(this.ember);
 
+    // The strike line: rhythm games make the "now" point a physical object
+    // everything converges into — the sharpest thing on screen.
+    this.strikeMat = new THREE.MeshBasicMaterial({ color: 0xf2e8d9, transparent: true, opacity: 0.85 });
+    this.strikeLine = new THREE.Mesh(new THREE.BoxGeometry(LANE_WIDTH * 1.5, 0.035, 0.05), this.strikeMat);
+    this.strikeLine.position.set(0, 0.05, 0);
+    this.scene.add(this.strikeLine);
+
+    // Breathing halo for rest segments: Apple-Breathe pacing, ~8s per cycle.
+    this.haloMat = new THREE.MeshBasicMaterial({
+      color: 0xf2e8d9,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.halo = new THREE.Mesh(new THREE.RingGeometry(0.88, 1.0, 64), this.haloMat);
+    this.halo.rotation.x = -Math.PI / 2;
+    this.halo.position.y = 0.02;
+    this.scene.add(this.halo);
+
+    this.buildTrail();
+
     this.buildParticles();
     this.scene.add(this.lane);
 
@@ -149,6 +185,65 @@ export class PracticeScene {
     this.scene.add(this.motes);
   }
 
+  /**
+   * The played-sound trail: an edge-on seismograph behind the strike line.
+   * What the mic heard leaves visible sediment — warm where sound lived,
+   * ash where it dropped (the Rocksmith actual-vs-target idea, and Guitar
+   * Hero's rule that a hold is never static).
+   */
+  private static readonly TRAIL_POINTS = 72;
+  private static readonly TRAIL_SPACING = 0.11;
+
+  private buildTrail(): void {
+    const n = PracticeScene.TRAIL_POINTS;
+    const positions = new Float32Array(n * 3);
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = 0.25;
+      positions[i * 3 + 2] = 0.2 + i * PracticeScene.TRAIL_SPACING;
+    }
+    this.trailGeo = new THREE.BufferGeometry();
+    this.trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.trailGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.trail = new THREE.Line(
+      this.trailGeo,
+      new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85 }),
+    );
+    this.scene.add(this.trail);
+  }
+
+  private updateTrail(t: number, playing: boolean): void {
+    if (t - this.lastTrailSample < 0.12) return;
+    this.lastTrailSample = t;
+    this.trailHistory.unshift({ h: this.envSlow, on: playing });
+    if (this.trailHistory.length > PracticeScene.TRAIL_POINTS) this.trailHistory.pop();
+
+    const pos = this.trailGeo.getAttribute('position') as THREE.BufferAttribute;
+    const col = this.trailGeo.getAttribute('color') as THREE.BufferAttribute;
+    const warm = new THREE.Color();
+    for (let i = 0; i < PracticeScene.TRAIL_POINTS; i++) {
+      const s = this.trailHistory[i];
+      const h = s?.on ? Math.min(1, s.h * 4) : 0;
+      pos.setY(i, 0.12 + h * 1.5);
+      const fade = 1 - i / PracticeScene.TRAIL_POINTS;
+      if (s?.on) {
+        warm.copy(this.tint).multiplyScalar((0.35 + h * 0.65) * fade);
+      } else {
+        warm.copy(ASH).multiplyScalar(fade * 0.6);
+      }
+      col.setXYZ(i, warm.r, warm.g, warm.b);
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+  }
+
+  /** Call when a segment boundary crosses the ember — the "consume" event. */
+  pulseBoundary(): void {
+    this.flash = 1;
+    if (!this.reduceMotion) this.spawnRipple();
+  }
+
   setPhase(phaseId: string): void {
     this.tint.setHex(PHASE_TINTS[phaseId] ?? 0xe8833a);
     this.moteMat.color.copy(this.tint);
@@ -190,7 +285,7 @@ export class PracticeScene {
       fill.scale.z = 0.0001;
       fill.position.set(0, height / 2 + 0.01, -(cursor * SCALE));
       this.lane.add(mesh, fill);
-      this.blocks.push({ mesh, fill, seg, startAt: cursor });
+      this.blocks.push({ mesh, fill, seg, startAt: cursor, baseOpacity: isPlay ? 0.4 : 0.16 });
       cursor += seg.seconds;
     }
   }
@@ -213,16 +308,23 @@ export class PracticeScene {
     this.ripples.push({ mesh, age: 0 });
   }
 
-  update(elapsed: number, currentIndex: number, rms: number, playing: boolean): void {
+  update(elapsed: number, currentIndex: number, rms: number, playing: boolean, runMs = 0): void {
     if (this.disposed) return;
     const t = performance.now() / 1000;
     const dt = this.lastT === 0 ? 0.016 : Math.min(0.1, t - this.lastT);
     this.lastT = t;
     this.smoothedRms += (rms - this.smoothedRms) * 0.15;
+    // Envelope follower: fast attack, ~2s release — sustained-drone practice
+    // wants slow following, never raw amplitude.
+    this.envSlow += (rms - this.envSlow) * (rms > this.envSlow ? 0.25 : dt / 2);
+    this.flash = Math.max(0, this.flash - dt * 1.6);
 
     this.lane.position.z = elapsed * SCALE;
 
-    this.blocks.forEach(({ mesh, fill, seg, startAt }, i) => {
+    const current = this.blocks[currentIndex];
+    const remaining = current ? current.startAt + current.seg.seconds - elapsed : Infinity;
+
+    this.blocks.forEach(({ mesh, fill, seg, startAt, baseOpacity }, i) => {
       const mat = mesh.material as THREE.MeshStandardMaterial;
       const fillMat = fill.material as THREE.MeshStandardMaterial;
       if (i < currentIndex) {
@@ -238,8 +340,30 @@ export class PracticeScene {
         fill.position.z = -(startAt * SCALE + (len * frac) / 2);
         fillMat.emissiveIntensity = playing ? 1.1 + this.smoothedRms * 2.4 : 0.4;
         mat.opacity = 0.5;
+      } else if (i === currentIndex + 1 && remaining < 4) {
+        // Telegraph the next segment one breath before it arrives.
+        mat.opacity = baseOpacity + (0.35 * (4 - remaining)) / 4;
+      } else {
+        mat.opacity = baseOpacity;
       }
     });
+
+    // Breathing halo during rest segments: swell in, sink out, ~8s cycle.
+    const resting = current?.seg.kind === 'rest';
+    if (resting) {
+      const breath = this.reduceMotion
+        ? 1
+        : 0.5 - 0.5 * Math.cos((t % 8) * ((Math.PI * 2) / 8));
+      this.halo.scale.setScalar(0.7 + breath * 1.1);
+      this.haloMat.opacity = this.reduceMotion ? 0.12 + 0.1 * Math.sin(t) : 0.08 + breath * 0.22;
+    } else {
+      this.haloMat.opacity = Math.max(0, this.haloMat.opacity - dt * 0.5);
+    }
+
+    // Unbroken-run escalation: the world itself is the success meter.
+    const energy = Math.min(1, runMs / 90_000);
+    (this.stars.material as THREE.PointsMaterial).opacity = 0.4 + energy * 0.3;
+    this.moteMat.size = 0.07 + energy * 0.04;
 
     // Resonance rings: the standing wave, visible only while sound lives.
     this.rippleTimer -= dt;
@@ -261,11 +385,19 @@ export class PracticeScene {
       }
     }
 
-    // The ember swells with breath pressure.
-    const swell = 1 + this.smoothedRms * 2.6 + (playing ? 0.12 : 0) + Math.sin(t * 2.2) * 0.03;
+    // The ember swells with breath pressure; boundary crossings flare it.
+    const swell =
+      1 + this.smoothedRms * 2.6 + (playing ? 0.12 : 0) + this.flash * 0.6 + Math.sin(t * 2.2) * 0.03;
     this.ember.scale.setScalar(swell);
     this.emberMat.color.setHex(playing ? 0xffb25e : 0x6b5238);
-    this.glow.intensity = 0.5 + this.smoothedRms * 7 + (playing ? 0.4 : 0);
+    this.glow.intensity = 0.5 + this.smoothedRms * 7 + (playing ? 0.4 : 0) + this.flash * 3;
+
+    // Strike line: brightest while sound feeds it, flaring on boundaries.
+    this.strikeMat.opacity = 0.5 + (playing ? 0.35 : 0) + this.flash * 0.4;
+    this.strikeMat.color.copy(playing ? this.tint : new THREE.Color(0xf2e8d9));
+    this.strikeLine.scale.x = 1 + this.flash * 0.25;
+
+    this.updateTrail(t, playing);
 
     // The world breathes; the camera sways like a player settling in.
     this.motes.scale.setScalar(1 + this.smoothedRms * 2.2);
@@ -278,7 +410,7 @@ export class PracticeScene {
       this.camera.lookAt(0, 0.5, -7);
     }
 
-    this.bloom.strength = 0.65 + this.smoothedRms * 0.9;
+    this.bloom.strength = 0.6 + this.envSlow * 0.8 + energy * 0.15 + this.flash * 0.2;
     this.composer.render();
   }
 

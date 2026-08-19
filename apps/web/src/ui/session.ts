@@ -58,12 +58,24 @@ export function renderSession(
     scene.dispose();
   };
 
+  // Flow-state HUD: chrome fades during stable play, any input re-summons it.
+  let lastActivity = performance.now();
+  const wake = () => {
+    lastActivity = performance.now();
+    hud.classList.remove('quiet');
+  };
+  screen.addEventListener('pointermove', wake);
+  screen.addEventListener('pointerdown', wake);
+  window.addEventListener('keydown', wake);
+
   let micVerified = false;
   const player = new SessionPlayer(session, {
     recordingKeyPrefix,
-    onSegmentChange(seg) {
+    onSegmentChange(seg, index) {
       cue.textContent = seg.cue;
       detail.textContent = seg.detail ?? seg.drillName;
+      if (index > 0) scene.pulseBoundary();
+      wake();
     },
     onTick(t) {
       count.textContent = fmtClock(t.segmentRemaining + 0.999);
@@ -72,9 +84,11 @@ export function renderSession(
       runInfo.textContent =
         micVerified && t.currentRunMs > 1500 ? `run ${fmtClock(t.currentRunMs / 1000)}` : '';
       fill.style.width = `${Math.min(100, (t.elapsed / session.totalSeconds) * 100)}%`;
-      scene.update(t.elapsed, t.segmentIndex, t.rms, t.playing);
+      if (performance.now() - lastActivity > 9000) hud.classList.add('quiet');
+      scene.update(t.elapsed, t.segmentIndex, t.rms, t.playing, micVerified ? t.currentRunMs : 0);
     },
     onFinish(result) {
+      window.removeEventListener('keydown', wake);
       cleanup();
       onDone(result);
     },

@@ -43,21 +43,34 @@ abstract class MicSource implements PracticeSource {
   abstract readonly kind: 'energy' | 'pitch';
   protected pipeline: MicPipeline | null = null;
   private raf = 0;
-  /** Slow-tracking noise floor, updated only while not playing. */
+  /** Bumped by every start()/stop(); stale async starts see it and bail. */
+  private generation = 0;
+  /** Slow-tracking noise floor, learned only from genuinely quiet frames. */
   protected noiseFloor = 0.005;
 
   protected abstract analyze(buf: Float32Array, sampleRate: number, rms: number): Omit<AudioFrame, 'timeMs' | 'rms'>;
 
   async start(onFrame: (frame: AudioFrame) => void): Promise<void> {
     this.stop();
-    this.pipeline = await openMic();
+    const gen = ++this.generation;
+    const pipeline = await openMic();
+    if (gen !== this.generation) {
+      // stop() (or another start) happened while getUserMedia was pending.
+      pipeline.stream.getTracks().forEach((t) => t.stop());
+      void pipeline.ctx.close();
+      return;
+    }
+    this.pipeline = pipeline;
     const tick = () => {
       const p = this.pipeline;
-      if (!p) return;
+      if (!p || gen !== this.generation) return;
       p.analyser.getFloatTimeDomainData(p.buffer);
       const rms = rmsOf(p.buffer);
       const partial = this.analyze(p.buffer, p.ctx.sampleRate, rms);
-      if (!partial.playing) {
+      // Learn the floor only from frames quieter than the current gate —
+      // loud-but-rejected sound (a drone failing the clarity check) must
+      // not ratchet the floor up and lock legitimate playing out.
+      if (!partial.playing && rms < this.gate()) {
         this.noiseFloor = this.noiseFloor * 0.98 + rms * 0.02;
       }
       onFrame({ timeMs: performance.now(), rms, ...partial });
@@ -67,6 +80,7 @@ abstract class MicSource implements PracticeSource {
   }
 
   stop(): void {
+    this.generation++;
     cancelAnimationFrame(this.raf);
     if (this.pipeline) {
       this.pipeline.stream.getTracks().forEach((t) => t.stop());
@@ -75,8 +89,12 @@ abstract class MicSource implements PracticeSource {
     }
   }
 
+  private gate(): number {
+    return Math.max(0.01, this.noiseFloor * 3);
+  }
+
   protected aboveFloor(rms: number): boolean {
-    return rms > Math.max(0.01, this.noiseFloor * 3);
+    return rms > this.gate();
   }
 
   getStream(): MediaStream | null {

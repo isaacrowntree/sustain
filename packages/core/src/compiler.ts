@@ -29,12 +29,43 @@ function slotMinutes(slot: SessionSlot, t: number): number {
   return slot.minutes.start + (slot.minutes.end - slot.minutes.start) * t;
 }
 
+/**
+ * When every drill in a pool is still locked, walk the prerequisite chain
+ * down to something the player HAS unlocked — the pedagogically right
+ * substitute is the missing prerequisite, not the gated drill itself.
+ */
+function unlockedPrerequisite(
+  drill: Drill,
+  unlocked: Set<string>,
+  drillsById: Map<string, Drill>,
+  seen: Set<string>,
+): Drill | null {
+  if (seen.has(drill.id)) return null;
+  seen.add(drill.id);
+  for (const req of drill.requires ?? []) {
+    if (req.kind !== 'drill-completed') continue;
+    const dep = drillsById.get(req.drill);
+    if (!dep) continue;
+    if (unlocked.has(dep.id)) return dep;
+    const deeper = unlockedPrerequisite(dep, unlocked, drillsById, seen);
+    if (deeper) return deeper;
+  }
+  return null;
+}
+
 /** Deterministically rotate a drill pool by day, honoring unlocks. */
 function pickDrill(pool: string[], unlocked: Set<string>, drillsById: Map<string, Drill>, dayIndex: number): Drill | null {
   const available = pool.filter((id) => unlocked.has(id) && drillsById.has(id));
   if (available.length === 0) {
-    // Fall back to the first pool drill that exists at all, so a session can
-    // always be compiled even if unlock state is missing.
+    // Whole pool locked: serve the nearest unlocked prerequisite instead of
+    // silently bypassing a gate, and only then fall back to the first drill.
+    const seen = new Set<string>();
+    for (const id of pool) {
+      const drill = drillsById.get(id);
+      if (!drill) continue;
+      const prereq = unlockedPrerequisite(drill, unlocked, drillsById, seen);
+      if (prereq) return prereq;
+    }
     const fallback = pool.find((id) => drillsById.has(id));
     return fallback ? drillsById.get(fallback)! : null;
   }
@@ -77,6 +108,11 @@ export interface CompileOptions {
    * state-aware answer so a mid-week joiner still gets their day-one drills.
    */
   firstSessionOfPhase?: boolean;
+  /**
+   * Compile a make-up session on a scheduled rest day — how a missed
+   * practice day gets recovered without breaking the week.
+   */
+  makeup?: boolean;
 }
 
 /**
@@ -92,7 +128,7 @@ export function compileSession(
   options: CompileOptions = {},
 ): CompiledSession | null {
   const phase = day.phase;
-  if (!phase || day.isRestDay || day.isComplete) return null;
+  if (!phase || (day.isRestDay && !options.makeup) || day.isComplete) return null;
 
   const drillsById = new Map(pack.drills.map((d) => [d.id, d]));
   const t = phaseProgress(phase, day.week);

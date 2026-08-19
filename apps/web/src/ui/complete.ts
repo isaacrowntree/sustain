@@ -3,9 +3,9 @@ import {
   pendingSelfReports,
   recordMetric,
   type CompiledSession,
+  type ISODate,
   type ProgressState,
 } from '@sustain/core';
-import { today } from '../state.js';
 import type { SessionResult } from '../session-player.js';
 import { el, fmtMinutes } from './format.js';
 
@@ -21,9 +21,9 @@ export function renderComplete(
   session: CompiledSession,
   result: SessionResult,
   prFlashes: string[],
+  date: ISODate,
   onContinue: () => void,
 ): void {
-  const date = today();
   const screen = el('div', { class: 'screen' });
   screen.append(el('h1', {}, result.aborted ? 'Session ended early' : 'Session complete'));
 
@@ -45,6 +45,19 @@ export function renderComplete(
   for (const flash of prFlashes) {
     summary.append(el('p', { class: 'pr-flash' }, `★ ${flash}`));
   }
+
+  // The session as a timeline strip — what you did, in the lane's colors,
+  // dimmed past the point an early end stopped play.
+  const timeline = el('div', { class: 'timeline' });
+  let cum = 0;
+  for (const seg of session.segments) {
+    const piece = el('div', { class: `piece role-${seg.role}${seg.kind !== 'play' && seg.kind !== 'record' ? ' quiet-piece' : ''}` });
+    piece.style.flexGrow = String(seg.seconds);
+    if (cum >= result.completedSeconds) piece.classList.add('unreached');
+    timeline.append(piece);
+    cum += seg.seconds;
+  }
+  summary.append(timeline);
   screen.append(summary);
 
   // Manual metric entry when the mic didn't verify: the numbers stay honest

@@ -45,6 +45,7 @@ body::before {
     radial-gradient(70% 50% at 90% 110%, rgba(63, 184, 175, 0.05), transparent 60%);
   z-index: 0;
 }
+body:has(.session-screen)::after { opacity: 0.02; }
 body::after {
   content: '';
   position: fixed;
@@ -307,6 +308,27 @@ button.ghost { background: transparent; color: var(--muted); box-shadow: none; p
   backdrop-filter: blur(8px);
 }
 .mic-badge.live { background: color-mix(in oklab, var(--green) 22%, transparent); color: var(--green); }
+
+/* Flow-state fade: chrome recedes during stable play; the cue never does. */
+.hud .hud-top,
+.hud .hud-bottom {
+  transition: opacity 1.2s ease;
+}
+.hud.quiet .hud-top,
+.hud.quiet .hud-bottom {
+  opacity: 0.06;
+}
+
+/* Post-session timeline: the session in the lane's own colors. */
+.timeline { display: flex; gap: 1px; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 6px; }
+.timeline .piece { min-width: 1px; }
+.timeline .role-warmup { background: #4aa39b; }
+.timeline .role-skill { background: #cf7f45; }
+.timeline .role-endurance { background: #9a86d8; }
+.timeline .role-cooldown { background: #7aa570; }
+.timeline .role-assessment { background: #e0685f; }
+.timeline .quiet-piece { opacity: 0.35; }
+.timeline .unreached { opacity: 0.12; }
 
 .prompt-list { display: flex; flex-direction: column; gap: 14px; }
 .prompt { display: flex; flex-direction: column; gap: 8px; }

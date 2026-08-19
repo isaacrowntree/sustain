@@ -44,6 +44,20 @@ describe('PlayingClock', () => {
     expect(s.longestRunMs).toBeGreaterThanOrEqual(firstRun);
   });
 
+  it('treats a long frame gap as a discontinuity, not credited play', () => {
+    const clock = new PlayingClock({ onsetMs: 100, graceMs: 250 });
+    clock.update(frame(0, true));
+    clock.update(frame(200, true));
+    // Tab backgrounded / paused for 30s, then frames resume.
+    let s = clock.update(frame(30_200, true));
+    expect(s.playMs).toBeLessThan(1000);
+    expect(s.currentRunMs).toBe(0);
+    // Fresh onset required before credit resumes.
+    s = clock.update(frame(30_350, true));
+    expect(s.playing).toBe(true);
+    expect(s.currentRunMs).toBeLessThan(400);
+  });
+
   it('accumulates playMs across runs', () => {
     const clock = new PlayingClock({ onsetMs: 100, graceMs: 100 });
     clock.update(frame(0, true));

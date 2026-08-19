@@ -50,8 +50,8 @@ export class SessionPlayer {
   private pausedTotalMs = 0;
   private segmentIndex = -1;
   private metricRuns: Record<string, number> = {};
-  private completedDrills = new Set<string>();
   private recorder: MediaRecorder | null = null;
+  private precuedIndex = -1;
   private finished = false;
   private speechCtx: AudioContext | null = null;
 
@@ -68,10 +68,21 @@ export class SessionPlayer {
 
   /** Swap in a mic source mid-session. Must be called from a user gesture. */
   async useSource(source: PracticeSource, verified: boolean): Promise<void> {
+    if (this.finished) return;
+    // Start the new source BEFORE touching state: if the mic prompt is
+    // denied this throws, the timer source keeps running, nothing changes.
+    await source.start((f) => this.onFrame(f));
+    if (this.finished) {
+      source.stop();
+      return;
+    }
     this.source.stop();
     this.source = source;
     this.verified = verified;
-    await source.start((f) => this.onFrame(f));
+    // Timer-fabricated credit must not masquerade as mic-verified time:
+    // verified counting starts from zero at the moment the mic goes live.
+    this.sessionClock.reset();
+    this.segmentClock.reset();
   }
 
   get micStream(): MediaStream | null {
@@ -152,6 +163,13 @@ export class SessionPlayer {
     }
 
     const seg = segments[idx]!;
+    // Telegraph the coming boundary one breath early — a soft low chime,
+    // only for segments long enough that the transition isn't already near.
+    const segRemaining = this.segmentStart(idx) + seg.seconds - elapsed;
+    if (segRemaining < 3.2 && seg.seconds >= 10 && this.precuedIndex !== idx) {
+      this.precuedIndex = idx;
+      this.chime(392);
+    }
     const clock = this.sessionClock.update(this.lastFrame);
     this.opts.onTick({
       elapsed,
@@ -169,8 +187,6 @@ export class SessionPlayer {
   };
 
   private enterSegment(index: number): void {
-    const prev = this.session.segments[this.segmentIndex];
-    if (prev && !prev.drillId.startsWith('boss-')) this.completedDrills.add(prev.drillId);
     this.stopRecorder();
 
     this.segmentIndex = index;
@@ -229,13 +245,26 @@ export class SessionPlayer {
     }
   }
 
+  /**
+   * A drill counts as completed only when every one of its segments was
+   * traversed — an abort mid-drill must not satisfy unlock gates.
+   */
+  private completedDrillIds(aborted: boolean): string[] {
+    const lastIndexExclusive = aborted ? this.segmentIndex : this.session.segments.length;
+    const lastIndexOfDrill = new Map<string, number>();
+    this.session.segments.forEach((s, i) => lastIndexOfDrill.set(s.drillId, i));
+    const ids: string[] = [];
+    for (const [id, last] of lastIndexOfDrill) {
+      if (last < lastIndexExclusive && !id.startsWith('boss-')) ids.push(id);
+    }
+    return ids;
+  }
+
   private finish(aborted: boolean): void {
     if (this.finished) return;
     this.finished = true;
     cancelAnimationFrame(this.raf);
     this.stopRecorder();
-    const seg = this.session.segments[this.segmentIndex];
-    if (!aborted && seg && !seg.drillId.startsWith('boss-')) this.completedDrills.add(seg.drillId);
     const clock = this.sessionClock.update(this.lastFrame);
     this.source.stop();
     speechSynthesis.cancel();
@@ -256,7 +285,7 @@ export class SessionPlayer {
       metricRuns: Object.fromEntries(
         Object.entries(this.metricRuns).map(([k, v]) => [k, Math.round(v)]),
       ),
-      completedDrillIds: [...this.completedDrills],
+      completedDrillIds: this.completedDrillIds(aborted),
       aborted,
     });
   }

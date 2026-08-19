@@ -24,6 +24,11 @@ export interface ProgressState {
   packId: string;
   /** Program start date — always a Monday. */
   startDate: ISODate;
+  /**
+   * The day the player actually began. When it falls mid-week, the first
+   * week's adherence target is prorated to the practice days that remained.
+   */
+  joinDate?: ISODate;
   sessions: SessionRecord[];
   bests: Record<string, MetricEntry>;
   history: Record<string, MetricEntry[]>;
@@ -31,11 +36,12 @@ export interface ProgressState {
   selfReports: Record<string, boolean>;
 }
 
-export function emptyProgress(packId: string, startDate: ISODate): ProgressState {
+export function emptyProgress(packId: string, startDate: ISODate, joinDate?: ISODate): ProgressState {
   return {
     version: 1,
     packId,
     startDate,
+    joinDate: joinDate ?? startDate,
     sessions: [],
     bests: {},
     history: {},
@@ -99,18 +105,21 @@ export function hasSessionInPhase(
   });
 }
 
-/** Persistence boundary. The web app backs this with localStorage. */
+/** Persistence boundary. The web app backs this with IndexedDB. */
 export interface ProgressStore {
-  load(): ProgressState | null;
-  save(state: ProgressState): void;
+  load(): Promise<ProgressState | null>;
+  save(state: ProgressState): Promise<void>;
 }
 
 export class MemoryStore implements ProgressStore {
   private state: ProgressState | null = null;
-  load(): ProgressState | null {
-    return this.state ? (JSON.parse(JSON.stringify(this.state)) as ProgressState) : null;
+  load(): Promise<ProgressState | null> {
+    return Promise.resolve(
+      this.state ? (JSON.parse(JSON.stringify(this.state)) as ProgressState) : null,
+    );
   }
-  save(state: ProgressState): void {
+  save(state: ProgressState): Promise<void> {
     this.state = JSON.parse(JSON.stringify(state)) as ProgressState;
+    return Promise.resolve();
   }
 }

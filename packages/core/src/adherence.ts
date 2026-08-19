@@ -23,13 +23,16 @@ export interface AdherenceSummary {
 
 /**
  * Adherence is counted in weeks, not days: a "perfect week" hits the pack's
- * sessions-per-week target. Rest days can never break anything, and a single
- * missed day leaves the week recoverable — the habit-formation literature
- * (Lally et al. 2010) found one missed day does not impair habit formation.
+ * sessions-per-week target. Rest days can never break anything, a mid-week
+ * join prorates the first week's target to the practice days that remained,
+ * and a missed day is recoverable with a make-up session on a rest day —
+ * the habit-formation literature (Lally et al. 2010) found one missed day
+ * does not impair habit formation.
  */
 export function adherence(pack: InstrumentPack, state: ProgressState, today: ISODate): AdherenceSummary {
-  const target = pack.schedule.daysPerWeek;
+  const fullTarget = pack.schedule.daysPerWeek;
   const start = state.startDate;
+  const join = state.joinDate ?? start;
   const weeks: WeekSummary[] = [];
   const byWeek = new Map<string, number>();
 
@@ -44,6 +47,12 @@ export function adherence(pack: InstrumentPack, state: ProgressState, today: ISO
     const offset = daysBetween(start, wk);
     const programWeek = offset >= 0 && offset / 7 < pack.schedule.totalWeeks ? offset / 7 + 1 : null;
     const sessionsDone = byWeek.get(wk) ?? 0;
+    // The join week only asks for the practice days that were still ahead.
+    let target = fullTarget;
+    if (wk === mondayOf(join)) {
+      const missedDays = Math.min(daysBetween(wk, join), fullTarget);
+      target = Math.max(1, fullTarget - missedDays);
+    }
     weeks.push({ weekStart: wk, programWeek, sessionsDone, target, isPerfect: sessionsDone >= target });
   }
 

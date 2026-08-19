@@ -136,11 +136,24 @@ export function renderHome(
       el('p', { class: 'focus' }, 'Done for today. Tomorrow continues the arc.'),
     );
   } else if (day.isRestDay) {
-    action = el(
-      'div',
-      { class: 'stage' },
-      el('p', { class: 'focus' }, 'Rest day — scheduled and deliberate. Recovery is when the adaptation happens.'),
-    );
+    const thisWeek = a.weeks.find((w) => w.weekStart === mondayOf(todayIso));
+    const behind = thisWeek && thisWeek.sessionsDone < thisWeek.target;
+    if (behind) {
+      const makeupBtn = el('button', { class: 'start-btn' }, 'Make-up session');
+      makeupBtn.addEventListener('click', cb.onStartSession);
+      action = el(
+        'div',
+        { class: 'stage' },
+        el('p', { class: 'focus' }, 'Rest day — but this week is a session short. One make-up now keeps the week whole.'),
+        makeupBtn,
+      );
+    } else {
+      action = el(
+        'div',
+        { class: 'stage' },
+        el('p', { class: 'focus' }, 'Rest day — scheduled and deliberate. Recovery is when the adaptation happens.'),
+      );
+    }
   } else {
     const session = compileSession(pack, day, unlockedDrills(pack, state), {
       firstSessionOfPhase: day.phase ? !hasSessionInPhase(state, day.phase) : false,
@@ -194,6 +207,7 @@ export function renderHome(
     document.body.append(aEl);
     aEl.click();
     aEl.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   });
 
   // The hero card carries the current phase's color.

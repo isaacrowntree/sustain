@@ -63,10 +63,26 @@ describe('compiler', () => {
     expect(late.totalSeconds).toBeGreaterThan(early.totalSeconds);
   });
 
-  it('returns null on rest days', () => {
+  it('returns null on rest days unless compiling a make-up session', () => {
     const state = emptyProgress(pack.id, START);
     const sat = programDayFor(pack, START, addDays(START, 5));
     expect(compileSession(pack, sat, unlockedDrills(pack, state))).toBeNull();
+    const makeup = compileSession(pack, sat, unlockedDrills(pack, state), { makeup: true });
+    expect(makeup).not.toBeNull();
+    expect(makeup!.isBoss).toBe(false);
+  });
+
+  it('serves the nearest unlocked prerequisite when a whole pool is locked', () => {
+    const state = emptyProgress(pack.id, START);
+    // Week 6 (connection phase) with nothing demonstrated: cb-on-didge and
+    // bridge-the-gap are locked; the chain bottoms out at cheek-puff-breathing.
+    const day = programDayFor(pack, START, addDays(START, 5 * 7));
+    expect(day.phase?.id).toBe('connection');
+    const session = compileSession(pack, day, unlockedDrills(pack, state))!;
+    const skillDrills = session.segments.filter((s) => s.role === 'skill').map((s) => s.drillId);
+    expect(skillDrills).not.toContain('cb-on-didge');
+    expect(skillDrills).not.toContain('bridge-the-gap');
+    expect(skillDrills).toContain('cheek-puff-breathing');
   });
 
   it('appends measured assessments on boss sessions', () => {
@@ -112,6 +128,43 @@ describe('progress + adherence', () => {
     const pr = recordMetric(state, pack, 'longest-drone', 20, START, true);
     expect(pr.isPersonalRecord).toBe(true);
     expect(pr.previousBest).toBe(12);
+  });
+
+  it('prorates the join week so a mid-week joiner can still be perfect', () => {
+    // Joined Wednesday: only Wed/Thu/Fri remain, so the target is 3.
+    const join = addDays(START, 2);
+    const state = emptyProgress(pack.id, START, join);
+    for (let i = 2; i < 5; i++) {
+      recordSession(state, {
+        date: addDays(START, i),
+        dayIndex: i,
+        completedSeconds: 900,
+        playSeconds: 600,
+        verified: false,
+        isBoss: false,
+      });
+    }
+    const a = adherence(pack, state, addDays(START, 6));
+    expect(a.weeks[0]!.target).toBe(3);
+    expect(a.weeks[0]!.isPerfect).toBe(true);
+    expect(a.currentStreak).toBe(1);
+  });
+
+  it('lets a rest-day make-up session recover a missed weekday', () => {
+    const state = emptyProgress(pack.id, START);
+    // Mon-Thu done, Friday missed, Saturday make-up.
+    for (const i of [0, 1, 2, 3, 5]) {
+      recordSession(state, {
+        date: addDays(START, i),
+        dayIndex: i,
+        completedSeconds: 900,
+        playSeconds: 600,
+        verified: false,
+        isBoss: false,
+      });
+    }
+    const a = adherence(pack, state, addDays(START, 6));
+    expect(a.weeks[0]!.isPerfect).toBe(true);
   });
 
   it('counts perfect weeks and streaks with rest days never breaking', () => {

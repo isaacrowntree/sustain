@@ -40,8 +40,22 @@ export class PlayingClock {
 
   update(frame: AudioFrame): ClockState {
     const now = frame.timeMs;
-    const dt = this.lastFrameMs === null ? 0 : Math.max(0, now - this.lastFrameMs);
+    const rawDt = this.lastFrameMs === null ? 0 : Math.max(0, now - this.lastFrameMs);
     this.lastFrameMs = now;
+
+    // A long gap between frames means we weren't observing (pause, tab in
+    // the background, source swap). Nothing in that span is credible: end
+    // any run and require a fresh onset rather than crediting wall time.
+    if (rawDt > 2000) {
+      this.candidateSinceMs = null;
+      this.lastPlayingMs = null;
+      this.runStartMs = null;
+      this.state.playing = false;
+      this.state.currentRunMs = 0;
+    }
+    // Credited time per frame is capped so a single late frame can't
+    // inflate playMs beyond what was plausibly observed.
+    const dt = Math.min(500, rawDt);
 
     if (frame.playing) {
       this.candidateSinceMs ??= now;
