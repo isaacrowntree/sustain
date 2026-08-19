@@ -14,10 +14,10 @@ import { exportProgress, today } from '../state.js';
 import { el, fmtMinutes } from './format.js';
 
 const PHASE_CSS: Record<string, string> = {
-  foundation: '#f5a643',
-  'breath-mechanics': '#4ecdc4',
-  connection: '#b58cff',
-  'endurance-voice': '#6fce8f',
+  foundation: '#e8833a',
+  'breath-mechanics': '#3fb8af',
+  connection: '#a78bfa',
+  'endurance-voice': '#7fb069',
 };
 
 export interface HomeCallbacks {
@@ -30,20 +30,20 @@ export function renderWelcome(root: HTMLElement, pack: InstrumentPack, cb: HomeC
     el(
       'div',
       { class: 'screen' },
-      el('h1', {}, 'Sustain'),
+      el('div', { class: 'wordmark' }, 'sustain'),
       el(
         'div',
-        { class: 'card hero' },
-        el('h2', {}, `${pack.name}: ${pack.schedule.totalWeeks} weeks`),
-        el('p', { class: 'sub' }, pack.description),
+        { class: 'stage' },
+        el('h1', {}, `${pack.schedule.totalWeeks} weeks of ${pack.name.toLowerCase()}`),
+        el('p', { class: 'focus' }, pack.description),
         el(
           'p',
           { class: 'sub' },
-          `${pack.schedule.daysPerWeek} sessions a week. Rest days are part of the program. ` +
-            'Progress is measured in what you can actually do — longer drones, longer unbroken sound — not points.',
+          `${pack.schedule.daysPerWeek} sessions a week — rest days are part of the program. ` +
+            'Progress is what you can actually do: longer drones, longer unbroken sound. No points.',
         ),
         (() => {
-          const b = el('button', {}, 'Begin week 1');
+          const b = el('button', { class: 'start-btn' }, 'Begin week one');
           b.addEventListener('click', cb.onBegin);
           return b;
         })(),
@@ -93,9 +93,11 @@ function journeyMap(pack: InstrumentPack, state: ProgressState): HTMLElement {
       .filter(Boolean)
       .join(' ');
     const wk = el('div', { class: cls, title: `Week ${w}${phase ? ` — ${phase.name}` : ''}` });
+    // Bar height is the week's session count — the shape is the data.
+    wk.style.height = `${8 + Math.min(sessions, pack.schedule.daysPerWeek) * 7}px`;
     if (sessions > 0) {
       const fill = el('div', { class: 'fill' });
-      fill.style.setProperty('--phase-c', PHASE_CSS[phase?.id ?? ''] ?? '#f5a643');
+      fill.style.setProperty('--phase-c', PHASE_CSS[phase?.id ?? ''] ?? '#e8833a');
       wk.append(fill);
     }
     map.append(wk);
@@ -118,69 +120,72 @@ export function renderHome(
   if (day.dayIndex < 0) {
     action = el(
       'div',
-      { class: 'card hero' },
-      el('h2', {}, 'Program begins Monday'),
-      el('p', { class: 'sub' }, 'Week 1 starts fresh. A good day to sort your instrument and your practice spot.'),
+      { class: 'stage' },
+      el('p', { class: 'focus' }, 'The program begins Monday. A good day to sort your instrument and your practice spot.'),
     );
   } else if (day.isComplete) {
     action = el(
       'div',
-      { class: 'card hero' },
-      el('h2', {}, 'Summit reached'),
-      el('p', { class: 'sub' }, `${pack.schedule.totalWeeks} weeks done. Keep playing — maintenance is a few sessions a week.`),
+      { class: 'stage' },
+      el('p', { class: 'focus' }, `Summit reached — ${pack.schedule.totalWeeks} weeks. Keep playing; maintenance is a few sessions a week.`),
     );
   } else if (doneToday) {
     action = el(
       'div',
-      { class: 'card hero' },
-      el('h2', {}, 'Done for today'),
-      el('p', { class: 'sub' }, 'Session complete. Tomorrow continues the arc.'),
+      { class: 'stage' },
+      el('p', { class: 'focus' }, 'Done for today. Tomorrow continues the arc.'),
     );
   } else if (day.isRestDay) {
     action = el(
       'div',
-      { class: 'card hero' },
-      el('h2', {}, 'Rest day'),
-      el('p', { class: 'sub' }, 'Scheduled and deliberate — recovery is when the adaptation happens. See you Monday.'),
+      { class: 'stage' },
+      el('p', { class: 'focus' }, 'Rest day — scheduled and deliberate. Recovery is when the adaptation happens.'),
     );
   } else {
     const session = compileSession(pack, day, unlockedDrills(pack, state), {
       firstSessionOfPhase: day.phase ? !hasSessionInPhase(state, day.phase) : false,
     });
-    const btn = el('button', {}, day.isBossSession ? 'Start assessment' : 'Start session');
+    const btn = el(
+      'button',
+      { class: 'start-btn' },
+      day.isBossSession ? 'Start assessment' : 'Start session',
+    );
     btn.addEventListener('click', cb.onStartSession);
     action = el(
       'div',
-      { class: 'card hero' },
-      el('h2', {}, session?.title ?? 'Session'),
-      el('p', { class: 'sub' }, day.phase?.focus ?? ''),
-      el('p', { class: 'sub' }, session ? `About ${fmtMinutes(session.totalSeconds)}.` : ''),
+      { class: 'stage' },
+      el('p', { class: 'focus' }, day.phase?.focus ?? ''),
+      el(
+        'p',
+        { class: 'sub' },
+        session
+          ? `About ${fmtMinutes(session.totalSeconds)} today${day.isBossSession ? ' — assessment day' : ''}.`
+          : '',
+      ),
       btn,
     );
   }
 
-  const stats = el(
-    'div',
-    { class: 'stat-row' },
-    el('div', { class: 'stat' }, el('div', { class: 'v' }, String(a.currentStreak)), el('div', { class: 'l' }, 'perfect weeks')),
-    el('div', { class: 'stat' }, el('div', { class: 'v' }, String(a.totalSessions)), el('div', { class: 'l' }, 'sessions')),
-    el('div', { class: 'stat' }, el('div', { class: 'v' }, String(a.totalPlayMinutes)), el('div', { class: 'l' }, 'played min')),
+  const streakWord = a.currentStreak === 1 ? 'perfect week' : 'perfect weeks';
+  const sessionWord = a.totalSessions === 1 ? 'session' : 'sessions';
+  const tally = el(
+    'p',
+    { class: 'tally' },
+    `${a.currentStreak} ${streakWord} · ${a.totalSessions} ${sessionWord} · ${a.totalPlayMinutes} minutes played`,
   );
 
-  const prCard = el('div', { class: 'card' }, el('h2', {}, 'Personal records'));
-  const prRow = el('div', { class: 'stat-row' });
+  const records = el('div', { class: 'records' });
   for (const m of pack.metrics) {
     const best = state.bests[m.id];
-    prRow.append(
+    records.append(
       el(
         'div',
-        { class: 'stat pr' },
-        el('div', { class: 'v' }, best ? `${best.value}s` : '—'),
-        el('div', { class: 'l' }, m.name),
+        { class: 'rec' },
+        el('div', { class: 'num' }, best ? `${best.value}s` : '—'),
+        el('div', { class: 'lbl' }, m.name.toLowerCase()),
       ),
     );
   }
-  prCard.append(prRow);
 
   const exportBtn = el('button', { class: 'ghost' }, 'Export progress JSON');
   exportBtn.addEventListener('click', () => {
@@ -191,15 +196,24 @@ export function renderHome(
     aEl.remove();
   });
 
+  // The hero card carries the current phase's color.
+  action.style.setProperty('--phase-c', PHASE_CSS[day.phase?.id ?? ''] ?? '#e8833a');
+
   root.replaceChildren(
     el(
       'div',
       { class: 'screen' },
-      el('h1', {}, `Week ${Math.min(Math.max(day.week, 1), pack.schedule.totalWeeks)} · ${day.phase?.name ?? pack.name}`),
+      el('div', { class: 'wordmark' }, 'sustain'),
+      el(
+        'div',
+        {},
+        el('div', { class: 'eyebrow' }, `week ${Math.min(Math.max(day.week, 1), pack.schedule.totalWeeks)} of ${pack.schedule.totalWeeks}`),
+        el('h1', {}, day.phase?.name ?? pack.name),
+      ),
       action,
-      el('div', { class: 'card' }, el('h2', {}, 'This week'), weekStrip(pack, state, todayIso)),
-      prCard,
-      el('div', { class: 'card' }, el('h2', {}, `The ${pack.schedule.totalWeeks}-week journey`), journeyMap(pack, state), stats),
+      el('div', { class: 'section' }, el('div', { class: 'eyebrow' }, 'this week'), weekStrip(pack, state, todayIso)),
+      el('div', { class: 'section' }, el('div', { class: 'eyebrow' }, 'records'), records),
+      el('div', { class: 'section' }, el('div', { class: 'eyebrow' }, 'the journey'), journeyMap(pack, state), tally),
       exportBtn,
     ),
   );
