@@ -290,14 +290,87 @@ button.ghost { background: transparent; color: var(--muted); box-shadow: none; p
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.progress { height: 3px; border-radius: 2px; background: rgba(242, 232, 217, 0.12); overflow: hidden; }
+/* Scrubbable session position. Generous hit area, hairline appearance. */
+.progress {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(242, 232, 217, 0.12);
+  cursor: ew-resize;
+  touch-action: none;
+  padding: 14px 0;
+  background-clip: content-box;
+}
 .progress .fill {
-  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 14px;
+  height: 3px;
+  border-radius: 2px;
   background: linear-gradient(90deg, var(--ember), var(--ember-hot));
   box-shadow: 0 0 12px var(--ember);
   transition: width 0.3s linear;
 }
+.progress .scrub-handle {
+  position: absolute;
+  top: 15.5px;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--ember-hot);
+  box-shadow: 0 0 12px var(--ember);
+  opacity: 0;
+  transition: opacity 0.2s ease, width 0.3s linear, left 0.3s linear;
+}
+.progress:hover .scrub-handle,
+.progress:focus-visible .scrub-handle,
+.progress.scrubbing .scrub-handle { opacity: 1; }
+.progress.scrubbing .fill,
+.progress.scrubbing .scrub-handle { transition: none; }
+.progress:focus-visible { outline: 2px solid var(--ember-hot); outline-offset: 4px; }
+
+button.step {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+}
 .hud-buttons { display: flex; gap: 10px; justify-content: center; }
+/* Input level: always honest about what the microphone is receiving,
+   separately from whether it counts as a drone yet. */
+.hud-mic { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.meter { display: flex; align-items: center; gap: 8px; opacity: 0; transition: opacity 0.4s ease; }
+.meter.live { opacity: 1; }
+.level {
+  width: 96px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(242, 232, 217, 0.12);
+  overflow: hidden;
+}
+.level-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: var(--muted);
+  transition: width 0.08s linear, background-color 0.3s ease;
+}
+/* Ember means it counts — the drone passed the detector. */
+.level.counting .level-fill {
+  background: linear-gradient(90deg, var(--ember), var(--ember-hot));
+  box-shadow: 0 0 10px var(--ember);
+}
+.pitch-read {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--ember-hot);
+  font-variant-numeric: tabular-nums;
+  min-width: 4.5ch;
+}
+
 .mic-badge {
   font-family: var(--display);
   font-style: italic;
@@ -310,14 +383,17 @@ button.ghost { background: transparent; color: var(--muted); box-shadow: none; p
 .mic-badge.live { background: color-mix(in oklab, var(--green) 22%, transparent); color: var(--green); }
 
 /* Flow-state fade: chrome recedes during stable play; the cue never does. */
-.hud .hud-top,
+.hud .hud-title,
+.hud .mic-badge,
 .hud .hud-bottom {
   transition: opacity 1.2s ease;
 }
-.hud.quiet .hud-top,
+.hud.quiet .hud-title,
+.hud.quiet .mic-badge,
 .hud.quiet .hud-bottom {
   opacity: 0.06;
 }
+/* The level meter is exempt: it's the one thing you want while droning. */
 
 /* Post-session timeline: the session in the lane's own colors. */
 .timeline { display: flex; gap: 1px; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 6px; }

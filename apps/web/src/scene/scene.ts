@@ -224,7 +224,8 @@ export class PracticeScene {
     const warm = new THREE.Color();
     for (let i = 0; i < PracticeScene.TRAIL_POINTS; i++) {
       const s = this.trailHistory[i];
-      const h = s?.on ? Math.min(1, s.h * 4) : 0;
+      // Any audible sound leaves a mark; verified playing marks it warm.
+      const h = s ? Math.min(1, s.h * 1.15) : 0;
       pos.setY(i, 0.12 + h * 1.5);
       const fade = 1 - i / PracticeScene.TRAIL_POINTS;
       if (s?.on) {
@@ -309,15 +310,19 @@ export class PracticeScene {
     this.ripples.push({ mesh, age: 0 });
   }
 
-  update(elapsed: number, currentIndex: number, rms: number, playing: boolean, runMs = 0): void {
+  /**
+   * @param level 0-1 normalised input level (not raw RMS — raw RMS barely
+   *   leaves the bottom of its range and makes the world look dead).
+   */
+  update(elapsed: number, currentIndex: number, level: number, playing: boolean, runMs = 0): void {
     if (this.disposed) return;
     const t = performance.now() / 1000;
     const dt = this.lastT === 0 ? 0.016 : Math.min(0.1, t - this.lastT);
     this.lastT = t;
-    this.smoothedRms += (rms - this.smoothedRms) * 0.15;
+    this.smoothedRms += (level - this.smoothedRms) * 0.25;
     // Envelope follower: fast attack, ~2s release — sustained-drone practice
     // wants slow following, never raw amplitude.
-    this.envSlow += (rms - this.envSlow) * (rms > this.envSlow ? 0.25 : dt / 2);
+    this.envSlow += (level - this.envSlow) * (level > this.envSlow ? 0.3 : dt / 2);
     this.flash = Math.max(0, this.flash - dt * 1.6);
 
     this.lane.position.z = elapsed * SCALE;
@@ -390,11 +395,13 @@ export class PracticeScene {
     }
 
     // The ember swells with breath pressure; boundary crossings flare it.
+    // Size answers "can it hear me" and responds to any sound; colour
+    // answers "does it count" and waits for the detector to agree.
     const swell =
-      1 + this.smoothedRms * 2.6 + (playing ? 0.12 : 0) + this.flash * 0.6 + Math.sin(t * 2.2) * 0.03;
+      1 + this.smoothedRms * 1.9 + (playing ? 0.2 : 0) + this.flash * 0.6 + Math.sin(t * 2.2) * 0.03;
     this.ember.scale.setScalar(swell);
-    this.emberMat.color.setHex(playing ? 0xffb25e : 0x6b5238);
-    this.glow.intensity = 0.5 + this.smoothedRms * 7 + (playing ? 0.4 : 0) + this.flash * 3;
+    this.emberMat.color.setHex(playing ? 0xffb25e : 0xc98b4a);
+    this.glow.intensity = 0.5 + this.smoothedRms * 5 + (playing ? 0.4 : 0) + this.flash * 3;
 
     // Strike line: brightest while sound feeds it, flaring on boundaries.
     this.strikeMat.opacity = 0.5 + (playing ? 0.35 : 0) + this.flash * 0.4;
@@ -404,9 +411,9 @@ export class PracticeScene {
     this.updateTrail(t, playing);
 
     // The world breathes; the camera sways like a player settling in.
-    this.motes.scale.setScalar(1 + this.smoothedRms * 2.2);
+    this.motes.scale.setScalar(1 + this.smoothedRms * 0.9);
     this.motes.rotation.y = t * 0.018;
-    this.moteMat.opacity = 0.28 + this.smoothedRms * 1.4;
+    this.moteMat.opacity = 0.28 + this.smoothedRms * 0.5;
     this.stars.rotation.y = t * 0.004;
     if (!this.reduceMotion) {
       this.camera.position.x = Math.sin(t * 0.13) * 0.18;
@@ -414,7 +421,7 @@ export class PracticeScene {
       this.camera.lookAt(0, 0.35, -8);
     }
 
-    this.bloom.strength = 0.6 + this.envSlow * 0.8 + energy * 0.15 + this.flash * 0.2;
+    this.bloom.strength = 0.6 + this.envSlow * 0.5 + energy * 0.15 + this.flash * 0.2;
     this.composer.render();
   }
 

@@ -11,10 +11,17 @@ import {
   unlockedDrills,
   type CompiledSession,
   type ISODate,
-  type ProgramDay,
   type ProgressState,
 } from '@sustain/core';
-import { beginProgram, IndexedDBProgressStore, today } from './state.js';
+import {
+  beginProgram,
+  clearActiveSession,
+  IndexedDBProgressStore,
+  loadActiveSession,
+  saveActiveSession,
+  today,
+  type ActiveSession,
+} from './state.js';
 import { renderHome, renderWelcome } from './ui/home.js';
 import { renderSession } from './ui/session.js';
 import { renderComplete } from './ui/complete.js';
@@ -66,15 +73,65 @@ function startSession(): void {
   });
   if (!session) return showHome();
 
-  renderSession(root, pack, session, `${pack.id}:${sessionDate}`, (result) => {
-    finishSession(session, result, day, sessionDate);
-  });
+  const recordingKeyPrefix = `${pack.id}:${sessionDate}`;
+  runSession(
+    {
+      version: 1,
+      packId: pack.id,
+      date: sessionDate,
+      dayIndex: day.dayIndex,
+      isBossSession: day.isBossSession,
+      isRestDayMakeup: day.isRestDay,
+      session,
+      recordingKeyPrefix,
+      elapsed: 0,
+      verified: false,
+      verifiedPlayMs: 0,
+      metricRuns: {},
+      savedAtMs: Date.now(),
+    },
+    false,
+  );
+}
+
+/**
+ * Run a session — new or resumed — keeping a snapshot on disk throughout so
+ * a reload, a closed tab, or a flat battery costs you your place and nothing
+ * more. A gap long enough that you clearly walked away resumes held, so you
+ * don't come back mid-drill with the clock running.
+ */
+function runSession(active: ActiveSession, isResume: boolean): void {
+  const { session } = active;
+  const gapMs = Date.now() - active.savedAtMs;
+
+  renderSession(
+    root,
+    pack,
+    session,
+    active.recordingKeyPrefix,
+    (result) => {
+      void clearActiveSession(pack.id);
+      finishSession(
+        session,
+        result,
+        { dayIndex: active.dayIndex, isBossSession: active.isBossSession },
+        active.date,
+      );
+    },
+    {
+      resumeFrom: isResume ? active : undefined,
+      startPaused: isResume && gapMs > 90_000,
+      onSnapshot(snapshot) {
+        void saveActiveSession({ ...active, ...snapshot, savedAtMs: Date.now() });
+      },
+    },
+  );
 }
 
 function finishSession(
   session: CompiledSession,
   result: SessionResult,
-  day: ProgramDay,
+  day: { dayIndex: number; isBossSession: boolean },
   date: ISODate,
 ): void {
   const state = current;
@@ -118,7 +175,12 @@ function finishSession(
   });
 }
 
-void store.load().then((state) => {
-  current = state;
+void (async () => {
+  current = await store.load();
+  const active = current ? await loadActiveSession(pack.id) : null;
+  if (active) {
+    runSession(active, true);
+    return;
+  }
   showHome();
-});
+})();

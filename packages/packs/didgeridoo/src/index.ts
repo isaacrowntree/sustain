@@ -39,8 +39,11 @@ export const didgeridooPack: InstrumentPack = {
     pitch: {
       minHz: 50,
       maxHz: 100,
-      minClarity: 0.85,
-      stabilitySemitones: 2,
+      // A beginner's drone wobbles and its clarity dips; too strict a gate
+      // reads as "the app can't hear me". The 50-100 Hz band is what keeps
+      // speech and room noise out, so these two can afford to be forgiving.
+      minClarity: 0.8,
+      stabilitySemitones: 3,
       rejectMainsHum: true,
     },
   },

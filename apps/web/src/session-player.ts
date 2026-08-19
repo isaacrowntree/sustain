@@ -12,6 +12,11 @@ export interface PlayerTick {
   playing: boolean;
   verifiedPlayMs: number;
   currentRunMs: number;
+  /** Detected fundamental, when an analyzer is running. */
+  pitchHz: number | null;
+  clarity: number | null;
+  /** True once a microphone source is live (as opposed to the timer). */
+  micActive: boolean;
 }
 
 export interface SessionResult {
@@ -24,12 +29,24 @@ export interface SessionResult {
   aborted: boolean;
 }
 
+/** Everything needed to put a reloaded page back where the player was. */
+export interface SessionProgressSnapshot {
+  elapsed: number;
+  verified: boolean;
+  verifiedPlayMs: number;
+  metricRuns: Record<string, number>;
+}
+
 export interface PlayerOptions {
   onTick(tick: PlayerTick): void;
   onSegmentChange(segment: Segment, index: number): void;
   onFinish(result: SessionResult): void;
+  /** Called every couple of seconds so the session survives a reload. */
+  onSnapshot?(snapshot: SessionProgressSnapshot): void;
   recordingKeyPrefix: string;
   speak?: boolean;
+  /** Resume an interrupted session instead of starting from zero. */
+  resumeFrom?: SessionProgressSnapshot;
 }
 
 /**
@@ -54,15 +71,29 @@ export class SessionPlayer {
   private precuedIndex = -1;
   private finished = false;
   private speechCtx: AudioContext | null = null;
+  /**
+   * Verified milliseconds banked before an interruption. The live clock
+   * starts from zero on resume, so this is added back at the end.
+   */
+  private carriedVerifiedMs = 0;
+  private lastSnapshotMs = 0;
 
   constructor(
     private session: CompiledSession,
     private opts: PlayerOptions,
-  ) {}
+  ) {
+    const resume = opts.resumeFrom;
+    if (resume) {
+      this.metricRuns = { ...resume.metricRuns };
+      if (resume.verified) this.carriedVerifiedMs = resume.verifiedPlayMs;
+    }
+  }
 
   async start(): Promise<void> {
     await this.source.start((f) => this.onFrame(f));
-    this.startedAtMs = performance.now();
+    // Rewind the clock's origin so elapsed picks up where it left off. The
+    // time the tab was closed is not credited — you weren't playing.
+    this.startedAtMs = performance.now() - (this.opts.resumeFrom?.elapsed ?? 0) * 1000;
     this.loop();
   }
 
@@ -105,17 +136,62 @@ export class SessionPlayer {
     return this.pausedAtMs !== null;
   }
 
-  skipSegment(): void {
+  /**
+   * Move the session clock to an absolute position. Used to skip a drill,
+   * repeat one, or put yourself back where you were after an interruption.
+   */
+  seekTo(seconds: number): void {
+    const target = Math.min(Math.max(0, seconds), Math.max(0, this.session.totalSeconds - 0.5));
+    const reference = this.pausedAtMs ?? performance.now();
+    this.startedAtMs = reference - this.pausedTotalMs - target * 1000;
+    // The clocks describe a stretch of time we're no longer in.
+    this.sessionClock.reset();
+    this.segmentClock.reset();
+    this.precuedIndex = -1;
+    this.stopRecorder();
+  }
+
+  seekBy(deltaSeconds: number): void {
+    this.seekTo(this.elapsedSeconds() + deltaSeconds);
+  }
+
+  /** Jump to the start of a neighbouring segment. */
+  seekSegment(direction: -1 | 1): void {
     const elapsed = this.elapsedSeconds();
-    const seg = this.session.segments[this.segmentIndex];
-    if (!seg) return;
-    const segStart = this.segmentStart(this.segmentIndex);
-    const remaining = seg.seconds - (elapsed - segStart);
-    if (remaining > 0) this.pausedTotalMs -= remaining * 1000;
+    const start = this.segmentStart(this.segmentIndex);
+    if (direction === -1) {
+      // Back within a segment restarts it; near its start goes to the previous.
+      const target = elapsed - start > 2 ? this.segmentIndex : this.segmentIndex - 1;
+      this.seekTo(this.segmentStart(Math.max(0, target)));
+    } else {
+      this.seekTo(start + (this.session.segments[this.segmentIndex]?.seconds ?? 0));
+    }
+  }
+
+  get elapsed(): number {
+    return this.elapsedSeconds();
+  }
+
+  get totalSeconds(): number {
+    return this.session.totalSeconds;
   }
 
   abort(): void {
     this.finish(true);
+  }
+
+  private snapshot(elapsed: number, clockPlayMs: number): SessionProgressSnapshot {
+    return {
+      elapsed,
+      verified: this.verified,
+      verifiedPlayMs: this.carriedVerifiedMs + (this.verified ? clockPlayMs : 0),
+      metricRuns: { ...this.metricRuns },
+    };
+  }
+
+  /** Snapshot right now — for pagehide, where there's no time to wait. */
+  snapshotNow(): SessionProgressSnapshot {
+    return this.snapshot(this.elapsedSeconds(), this.sessionClock.update(this.lastFrame).playMs);
   }
 
   private segmentStart(index: number): number {
@@ -171,6 +247,12 @@ export class SessionPlayer {
       this.chime(392);
     }
     const clock = this.sessionClock.update(this.lastFrame);
+
+    if (this.opts.onSnapshot && performance.now() - this.lastSnapshotMs > 2000) {
+      this.lastSnapshotMs = performance.now();
+      this.opts.onSnapshot(this.snapshot(elapsed, clock.playMs));
+    }
+
     this.opts.onTick({
       elapsed,
       segmentIndex: idx,
@@ -178,6 +260,9 @@ export class SessionPlayer {
       segmentRemaining: Math.max(0, this.segmentStart(idx) + seg.seconds - elapsed),
       totalRemaining: Math.max(0, this.session.totalSeconds - elapsed),
       rms: this.lastFrame.rms,
+      pitchHz: this.lastFrame.pitchHz,
+      clarity: this.lastFrame.clarity,
+      micActive: this.source.kind !== 'timer',
       playing: this.verified || this.source.kind !== 'timer' ? clock.playing : true,
       verifiedPlayMs: clock.playMs,
       currentRunMs: clock.currentRunMs,
