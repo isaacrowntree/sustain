@@ -1,0 +1,145 @@
+import { describe, expect, it } from 'vitest';
+import { didgeridooPack as pack } from '@sustain/pack-didgeridoo';
+import { programDayFor } from './calendar.js';
+import { compileSession } from './compiler.js';
+import { emptyProgress, recordMetric, recordSession, recordDrillCompletion } from './progress.js';
+import { unlockedDrills } from './unlocks.js';
+import { adherence } from './adherence.js';
+import { addDays } from './dates.js';
+
+const START = '2026-08-24'; // a Monday
+
+describe('calendar', () => {
+  it('marks the first daysPerWeek days as practice, the rest as rest', () => {
+    const mon = programDayFor(pack, START, START);
+    expect(mon.isRestDay).toBe(false);
+    expect(mon.week).toBe(1);
+    const sat = programDayFor(pack, START, addDays(START, 5));
+    expect(sat.isRestDay).toBe(true);
+  });
+
+  it('finds phase boundaries and boss sessions', () => {
+    const day1 = programDayFor(pack, START, START);
+    expect(day1.phase?.id).toBe('foundation');
+    expect(day1.isPhaseFirstSession).toBe(true);
+    // Last practice day of week 2 = foundation boss.
+    const bossDay = programDayFor(pack, START, addDays(START, 7 + pack.schedule.daysPerWeek - 1));
+    expect(bossDay.isBossSession).toBe(true);
+    // Week 17 is past the program.
+    const after = programDayFor(pack, START, addDays(START, 16 * 7));
+    expect(after.isComplete).toBe(true);
+  });
+});
+
+describe('compiler', () => {
+  it('compiles a first session with the baseline recording prepended', () => {
+    const state = emptyProgress(pack.id, START);
+    const day = programDayFor(pack, START, START);
+    const session = compileSession(pack, day, unlockedDrills(pack, state));
+    expect(session).not.toBeNull();
+    expect(session!.segments[0]!.drillId).toBe('baseline-recording');
+    expect(session!.segments.some((s) => s.kind === 'record')).toBe(true);
+  });
+
+  it('prepends first-session drills for a mid-week joiner via the override', () => {
+    const state = emptyProgress(pack.id, START);
+    // Wednesday of week 1: not the calendar-first session of the phase.
+    const day = programDayFor(pack, START, addDays(START, 2));
+    expect(day.isPhaseFirstSession).toBe(false);
+    const plain = compileSession(pack, day, unlockedDrills(pack, state))!;
+    expect(plain.segments[0]!.drillId).not.toBe('baseline-recording');
+    const withOverride = compileSession(pack, day, unlockedDrills(pack, state), {
+      firstSessionOfPhase: true,
+    })!;
+    expect(withOverride.segments[0]!.drillId).toBe('baseline-recording');
+  });
+
+  it('ramps session length across a phase', () => {
+    const state = emptyProgress(pack.id, START);
+    const unlocked = unlockedDrills(pack, state);
+    const early = compileSession(pack, programDayFor(pack, START, addDays(START, 1)), unlocked)!;
+    // Same weekday in week 2 (still foundation, further along the ramp).
+    const late = compileSession(pack, programDayFor(pack, START, addDays(START, 8)), unlocked)!;
+    expect(late.totalSeconds).toBeGreaterThan(early.totalSeconds);
+  });
+
+  it('returns null on rest days', () => {
+    const state = emptyProgress(pack.id, START);
+    const sat = programDayFor(pack, START, addDays(START, 5));
+    expect(compileSession(pack, sat, unlockedDrills(pack, state))).toBeNull();
+  });
+
+  it('appends measured assessments on boss sessions', () => {
+    const state = emptyProgress(pack.id, START);
+    const bossDay = programDayFor(pack, START, addDays(START, 7 + pack.schedule.daysPerWeek - 1));
+    const session = compileSession(pack, bossDay, unlockedDrills(pack, state))!;
+    expect(session.isBoss).toBe(true);
+    expect(session.segments.some((s) => s.assessment && s.metric === 'longest-drone')).toBe(true);
+  });
+});
+
+describe('unlocks', () => {
+  it('gates the circular-breathing ladder until demonstrated', () => {
+    const state = emptyProgress(pack.id, START);
+    let unlocked = unlockedDrills(pack, state);
+    expect(unlocked.has('first-drone')).toBe(true);
+    expect(unlocked.has('water-spray')).toBe(false);
+    expect(unlocked.has('cb-on-didge')).toBe(false);
+
+    for (let i = 0; i < 3; i++) recordDrillCompletion(state, 'cheek-puff-breathing');
+    unlocked = unlockedDrills(pack, state);
+    expect(unlocked.has('water-spray')).toBe(true);
+
+    for (let i = 0; i < 3; i++) recordDrillCompletion(state, 'straw-glass');
+    state.selfReports['can-squeeze-sniff'] = true;
+    unlocked = unlockedDrills(pack, state);
+    expect(unlocked.has('cb-on-didge')).toBe(true);
+  });
+
+  it('gates unbroken-sets on a 60s measured run', () => {
+    const state = emptyProgress(pack.id, START);
+    expect(unlockedDrills(pack, state).has('unbroken-sets')).toBe(false);
+    recordMetric(state, pack, 'longest-unbroken', 75, START, false);
+    expect(unlockedDrills(pack, state).has('unbroken-sets')).toBe(true);
+  });
+});
+
+describe('progress + adherence', () => {
+  it('tracks personal records directionally', () => {
+    const state = emptyProgress(pack.id, START);
+    expect(recordMetric(state, pack, 'longest-drone', 12, START, false).isPersonalRecord).toBe(true);
+    expect(recordMetric(state, pack, 'longest-drone', 10, START, false).isPersonalRecord).toBe(false);
+    const pr = recordMetric(state, pack, 'longest-drone', 20, START, true);
+    expect(pr.isPersonalRecord).toBe(true);
+    expect(pr.previousBest).toBe(12);
+  });
+
+  it('counts perfect weeks and streaks with rest days never breaking', () => {
+    const state = emptyProgress(pack.id, START);
+    // Complete all 5 practice days of week 1.
+    for (let i = 0; i < 5; i++) {
+      recordSession(state, {
+        date: addDays(START, i),
+        dayIndex: i,
+        completedSeconds: 900,
+        playSeconds: 600,
+        verified: false,
+        isBoss: false,
+      });
+    }
+    // Ask on Sunday of week 1 — rest days at the end must not break anything.
+    const sunday = addDays(START, 6);
+    const a = adherence(pack, state, sunday);
+    expect(a.perfectWeeks).toBe(1);
+    expect(a.currentStreak).toBe(1);
+    expect(a.totalSessions).toBe(5);
+  });
+
+  it('keeps one session per day, preferring the fuller one', () => {
+    const state = emptyProgress(pack.id, START);
+    recordSession(state, { date: START, dayIndex: 0, completedSeconds: 300, playSeconds: 200, verified: false, isBoss: false });
+    recordSession(state, { date: START, dayIndex: 0, completedSeconds: 900, playSeconds: 700, verified: false, isBoss: false });
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]!.completedSeconds).toBe(900);
+  });
+});

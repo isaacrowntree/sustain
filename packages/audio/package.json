@@ -1,0 +1,24 @@
+{
+  "name": "@sustain/audio",
+  "version": "0.1.0",
+  "description": "Sustain audio pipeline: pluggable practice sources — timer, mic energy, and pitch-verified playing detection.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sustain/pack-sdk": "workspace:*",
+    "pitchy": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

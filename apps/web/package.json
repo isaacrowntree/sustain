@@ -1,0 +1,26 @@
+{
+  "name": "@sustain/web",
+  "version": "0.1.0",
+  "description": "Sustain web app: guided practice sessions in an audio-reactive three.js environment.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sustain/audio": "workspace:*",
+    "@sustain/core": "workspace:*",
+    "@sustain/pack-didgeridoo": "workspace:*",
+    "@sustain/pack-sdk": "workspace:*",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.0.0"
+  }
+}
