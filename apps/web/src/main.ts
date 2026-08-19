@@ -2,9 +2,12 @@ import './style.css';
 import { didgeridooPack } from '@sustain/pack-didgeridoo';
 import { validatePack } from '@sustain/pack-sdk';
 import {
+  addDays,
   compileSession,
   completedDrillSet,
+  daysBetween,
   drillsDoneOn,
+  mondayOf,
   pendingFirstSessionDrills,
   programDayFor,
   recordDrillCompletion,
@@ -27,6 +30,7 @@ import {
 import { renderHome, renderWelcome } from './ui/home.js';
 import { renderSession } from './ui/session.js';
 import { renderComplete } from './ui/complete.js';
+import { renderProgram } from './ui/program.js';
 import { listRecordingKeys } from './recordings.js';
 import type { SessionResult } from './session-player.js';
 
@@ -52,6 +56,8 @@ function showHome(): void {
         });
       },
       onStartSession() {},
+      onMarkDone() {},
+      onViewProgram() {},
     });
     return;
   }
@@ -60,7 +66,77 @@ function showHome(): void {
     onStartSession() {
       startSession();
     },
+    onMarkDone() {
+      markTodayDone();
+    },
+    onViewProgram() {
+      showProgram();
+    },
   });
+}
+
+/**
+ * Credit today without playing it through the app — for when you practised
+ * away from the screen, or the app's bookkeeping lost track. The record
+ * should follow what you actually did.
+ */
+function markTodayDone(): void {
+  const state = current;
+  if (!state) return;
+  const date = today();
+  const day = programDayFor(pack, state.startDate, date);
+  if (!day.phase || day.isComplete) return;
+
+  const session = compileSession(pack, day, unlockedDrills(pack, state), {
+    firstSessionOfPhase: pendingFirstSessionDrills(state, day.phase).length > 0,
+    completedDrills: completedDrillSet(state),
+    makeup: day.isRestDay,
+  });
+  if (!session) return;
+
+  const drillIds = [
+    ...new Set(session.segments.map((s) => s.drillId).filter((id) => !id.startsWith('boss-'))),
+  ];
+  const alreadyDone = state.sessions.find((s) => s.date === date)?.completedSeconds ?? 0;
+  recordSession(state, {
+    date,
+    dayIndex: day.dayIndex,
+    completedSeconds: Math.max(0, session.totalSeconds - alreadyDone),
+    playSeconds: session.playSeconds,
+    verified: false,
+    isBoss: day.isBossSession,
+    completedDrillIds: drillIds,
+    counted: true,
+  });
+  for (const drillId of drillIds) recordDrillCompletion(state, drillId);
+  void store.save(state);
+  showHome();
+}
+
+function showProgram(): void {
+  if (!current) return showHome();
+  renderProgram(root, pack, current, {
+    onBack: showHome,
+    onJumpToWeek(week) {
+      jumpToWeek(week);
+    },
+  });
+}
+
+/**
+ * Move the programme so today falls in the chosen week. Existing session
+ * dates keep their place on the calendar; their day indices are rebased so
+ * the journey stays coherent.
+ */
+function jumpToWeek(week: number): void {
+  const state = current;
+  if (!state) return;
+  const newStart = addDays(mondayOf(today()), -(week - 1) * 7);
+  state.startDate = newStart;
+  state.joinDate = newStart;
+  state.sessions = state.sessions.map((s) => ({ ...s, dayIndex: daysBetween(newStart, s.date) }));
+  void store.save(state);
+  showHome();
 }
 
 function startSession(): void {

@@ -25,6 +25,10 @@ const PHASE_CSS: Record<string, string> = {
 export interface HomeCallbacks {
   onBegin(): void;
   onStartSession(): void;
+  /** Credit today's session without playing it through the app. */
+  onMarkDone(): void;
+  /** Open the full sixteen-week curriculum. */
+  onViewProgram(): void;
 }
 
 export function renderWelcome(root: HTMLElement, pack: InstrumentPack, cb: HomeCallbacks): void {
@@ -224,6 +228,9 @@ export function renderHome(
     );
   }
 
+  const programBtn = el('button', { class: 'secondary see-all' }, `See all ${pack.schedule.totalWeeks} weeks`);
+  programBtn.addEventListener('click', cb.onViewProgram);
+
   const exportBtn = el('button', { class: 'ghost' }, 'Export progress JSON');
   exportBtn.addEventListener('click', () => {
     const url = exportProgress(state);
@@ -236,6 +243,14 @@ export function renderHome(
 
   // The hero card carries the current phase's color.
   action.style.setProperty('--phase-c', PHASE_CSS[day.phase?.id ?? ''] ?? '#e8833a');
+
+  // Escape hatch: you practised, the app didn't see it. The record should
+  // follow the practice, not the other way around.
+  if (remaining && remaining.segments.length > 0 && !day.isComplete && day.dayIndex >= 0) {
+    const markBtn = el('button', { class: 'ghost mark-done' }, 'Mark today as done');
+    markBtn.addEventListener('click', cb.onMarkDone);
+    action.append(markBtn);
+  }
 
   root.replaceChildren(
     el(
@@ -251,7 +266,14 @@ export function renderHome(
       action,
       el('div', { class: 'section' }, el('div', { class: 'eyebrow' }, 'this week'), weekStrip(pack, state, todayIso)),
       el('div', { class: 'section' }, el('div', { class: 'eyebrow' }, 'records'), records),
-      el('div', { class: 'section' }, el('div', { class: 'eyebrow' }, 'the journey'), journeyMap(pack, state), tally),
+      el(
+        'div',
+        { class: 'section' },
+        el('div', { class: 'eyebrow' }, 'the journey'),
+        journeyMap(pack, state),
+        tally,
+        programBtn,
+      ),
       exportBtn,
     ),
   );

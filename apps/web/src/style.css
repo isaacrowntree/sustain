@@ -135,6 +135,75 @@ h2 {
   color: var(--text);
   max-width: 34ch;
 }
+button.mark-done {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  padding: 6px 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+button.see-all {
+  align-self: flex-start;
+  margin-top: 12px;
+  font-family: var(--display);
+  font-size: 1rem;
+  padding: 11px 18px;
+}
+
+/* ---- Programme browser ---- */
+.phase-card {
+  border-left: 2px solid var(--phase-c, var(--ember));
+  padding: 4px 0 4px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.phase-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.phase-head h2 { color: var(--phase-c, var(--ember)); }
+.phase-weeks {
+  font-family: var(--display);
+  font-style: italic;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.slots { display: flex; flex-direction: column; gap: 6px; }
+.slot-row { display: flex; gap: 12px; align-items: baseline; font-size: 0.9rem; }
+.slot-role {
+  flex: 0 0 5.5rem;
+  color: var(--muted);
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+.slot-drills { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.drill { color: var(--text); }
+.drill.locked { color: var(--muted); opacity: 0.55; }
+.off-mark { color: var(--muted); font-size: 0.7em; margin-left: 1px; cursor: help; }
+.boss-note {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--ember-hot);
+  line-height: 1.5;
+}
+.week-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.week-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.week-row.now { background: color-mix(in oklab, var(--phase-c, var(--ember)) 16%, transparent); }
+.week-n { flex: 0 0 5.5rem; font-family: var(--display); }
+.week-len { flex: 0 0 6rem; color: var(--muted); }
+.week-state { flex: 1; color: var(--muted); font-style: italic; font-family: var(--display); }
+button.jump { font-size: 0.82rem; padding: 4px 8px; }
+.week-row:not(:hover) button.jump { opacity: 0.35; }
+
 button.again {
   align-self: flex-start;
   margin-top: 8px;
