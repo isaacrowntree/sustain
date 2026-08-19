@@ -3,6 +3,8 @@ export { programDayFor, phaseForWeek, phaseProgress, type ProgramDay } from './c
 export { compileSession, type CompiledSession, type CompileOptions, type Segment } from './compiler.js';
 export {
   emptyProgress,
+  completedDrillSet,
+  pendingFirstSessionDrills,
   hasSessionInPhase,
   recordMetric,
   recordSession,

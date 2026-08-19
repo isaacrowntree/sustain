@@ -3,7 +3,8 @@ import { didgeridooPack } from '@sustain/pack-didgeridoo';
 import { validatePack } from '@sustain/pack-sdk';
 import {
   compileSession,
-  hasSessionInPhase,
+  completedDrillSet,
+  pendingFirstSessionDrills,
   programDayFor,
   recordDrillCompletion,
   recordMetric,
@@ -25,6 +26,7 @@ import {
 import { renderHome, renderWelcome } from './ui/home.js';
 import { renderSession } from './ui/session.js';
 import { renderComplete } from './ui/complete.js';
+import { listRecordingKeys } from './recordings.js';
 import type { SessionResult } from './session-player.js';
 
 const pack = didgeridooPack;
@@ -67,8 +69,10 @@ function startSession(): void {
   // belongs to the evening it was practiced on.
   const sessionDate = today();
   const day = programDayFor(pack, state.startDate, sessionDate);
+  const outstanding = day.phase ? pendingFirstSessionDrills(state, day.phase) : [];
   const session = compileSession(pack, day, unlockedDrills(pack, state), {
-    firstSessionOfPhase: day.phase ? !hasSessionInPhase(state, day.phase) : false,
+    firstSessionOfPhase: outstanding.length > 0,
+    completedDrills: completedDrillSet(state),
     makeup: day.isRestDay,
   });
   if (!session) return showHome();
@@ -175,8 +179,34 @@ function finishSession(
   });
 }
 
+/**
+ * A recording drill that left no audio behind wasn't really done — the
+ * microphone was off, or permission was declined. Put it back on the
+ * schedule so the day-one recording isn't lost to a silent failure.
+ */
+async function reconcileRecordings(state: ProgressState): Promise<boolean> {
+  const recordingDrills = pack.drills
+    .filter((d) => d.steps.some((s) => s.kind === 'record'))
+    .map((d) => d.id)
+    .filter((id) => (state.drillCompletions[id] ?? 0) > 0);
+  if (recordingDrills.length === 0) return false;
+
+  const keys = await listRecordingKeys();
+  let changed = false;
+  for (const id of recordingDrills) {
+    if (!keys.some((k) => k.endsWith(`:${id}`))) {
+      state.drillCompletions[id] = 0;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 void (async () => {
   current = await store.load();
+  if (current && (await reconcileRecordings(current))) {
+    await store.save(current);
+  }
   const active = current ? await loadActiveSession(pack.id) : null;
   if (active) {
     runSession(active, true);

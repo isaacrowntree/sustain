@@ -3,7 +3,8 @@ import {
   adherence,
   addDays,
   compileSession,
-  hasSessionInPhase,
+  completedDrillSet,
+  pendingFirstSessionDrills,
   mondayOf,
   programDayFor,
   unlockedDrills,
@@ -130,10 +131,21 @@ export function renderHome(
       el('p', { class: 'focus' }, `Summit reached — ${pack.schedule.totalWeeks} weeks. Keep playing; maintenance is a few sessions a week.`),
     );
   } else if (doneToday) {
+    // Practising twice is never the problem. The day still counts once.
+    const againBtn = el('button', { class: 'secondary again' }, 'Practise again');
+    againBtn.addEventListener('click', cb.onStartSession);
+    const outstanding = day.phase ? pendingFirstSessionDrills(state, day.phase) : [];
     action = el(
       'div',
       { class: 'stage' },
-      el('p', { class: 'focus' }, 'Done for today. Tomorrow continues the arc.'),
+      el(
+        'p',
+        { class: 'focus' },
+        outstanding.length > 0
+          ? 'Done for today — but the day-one recording is still outstanding. Run it again with the microphone on and it will be the first thing you do.'
+          : 'Done for today. Tomorrow continues the arc.',
+      ),
+      againBtn,
     );
   } else if (day.isRestDay) {
     const thisWeek = a.weeks.find((w) => w.weekStart === mondayOf(todayIso));
@@ -156,7 +168,8 @@ export function renderHome(
     }
   } else {
     const session = compileSession(pack, day, unlockedDrills(pack, state), {
-      firstSessionOfPhase: day.phase ? !hasSessionInPhase(state, day.phase) : false,
+      firstSessionOfPhase: day.phase ? pendingFirstSessionDrills(state, day.phase).length > 0 : false,
+      completedDrills: completedDrillSet(state),
     });
     const btn = el(
       'button',

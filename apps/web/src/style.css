@@ -135,6 +135,13 @@ h2 {
   color: var(--text);
   max-width: 34ch;
 }
+button.again {
+  align-self: flex-start;
+  margin-top: 8px;
+  font-family: var(--display);
+  font-size: 1.05rem;
+}
+
 .start-btn {
   font-family: var(--display);
   font-weight: 550;

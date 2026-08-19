@@ -94,6 +94,27 @@ export function recordDrillCompletion(state: ProgressState, drillId: string): vo
   state.drillCompletions[drillId] = (state.drillCompletions[drillId] ?? 0) + 1;
 }
 
+/** Drills completed at least once — what unlock and one-off logic reads. */
+export function completedDrillSet(state: ProgressState): Set<string> {
+  return new Set(
+    Object.entries(state.drillCompletions)
+      .filter(([, count]) => count > 0)
+      .map(([id]) => id),
+  );
+}
+
+/**
+ * A phase's one-off drills that are still outstanding. They survive until
+ * they're genuinely done, so an interrupted or unrecorded first session
+ * doesn't cost you the day-one recording.
+ */
+export function pendingFirstSessionDrills(
+  state: ProgressState,
+  phase: { firstSessionDrills?: string[] },
+): string[] {
+  return (phase.firstSessionDrills ?? []).filter((id) => (state.drillCompletions[id] ?? 0) === 0);
+}
+
 /** True when the player has already logged a session in this phase's weeks. */
 export function hasSessionInPhase(
   state: ProgressState,

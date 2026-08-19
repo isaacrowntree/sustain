@@ -77,6 +77,8 @@ export class SessionPlayer {
    */
   private carriedVerifiedMs = 0;
   private lastSnapshotMs = 0;
+  /** Record segments that produced no audio — usually the mic was off. */
+  private unrecordedDrills = new Set<string>();
 
   constructor(
     private session: CompiledSession,
@@ -292,18 +294,29 @@ export class SessionPlayer {
 
   private startRecorder(seg: Segment): void {
     const stream = this.micStream;
-    if (!stream) return;
+    if (!stream) {
+      // Nothing was captured, so the drill hasn't really been done — it
+      // stays outstanding and gets offered again next session.
+      this.unrecordedDrills.add(seg.drillId);
+      return;
+    }
     try {
       const rec = new MediaRecorder(stream);
       const chunks: Blob[] = [];
       rec.ondataavailable = (e) => chunks.push(e.data);
       rec.onstop = () => {
         const blob = new Blob(chunks, { type: rec.mimeType });
-        void saveRecording(`${this.opts.recordingKeyPrefix}:${seg.drillId}`, blob);
+        if (blob.size > 0) {
+          void saveRecording(`${this.opts.recordingKeyPrefix}:${seg.drillId}`, blob);
+        } else {
+          this.unrecordedDrills.add(seg.drillId);
+        }
       };
       rec.start();
       this.recorder = rec;
+      this.unrecordedDrills.delete(seg.drillId);
     } catch {
+      this.unrecordedDrills.add(seg.drillId);
       this.recorder = null;
     }
   }
@@ -340,7 +353,9 @@ export class SessionPlayer {
     this.session.segments.forEach((s, i) => lastIndexOfDrill.set(s.drillId, i));
     const ids: string[] = [];
     for (const [id, last] of lastIndexOfDrill) {
-      if (last < lastIndexExclusive && !id.startsWith('boss-')) ids.push(id);
+      if (last < lastIndexExclusive && !id.startsWith('boss-') && !this.unrecordedDrills.has(id)) {
+        ids.push(id);
+      }
     }
     return ids;
   }

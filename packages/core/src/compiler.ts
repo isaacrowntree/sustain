@@ -113,6 +113,12 @@ export interface CompileOptions {
    * practice day gets recovered without breaking the week.
    */
   makeup?: boolean;
+  /**
+   * Drills already completed at least once. A phase's one-off drills stay
+   * on the schedule until they appear here, so a baseline recording that
+   * never captured anything is offered again rather than silently skipped.
+   */
+  completedDrills?: Set<string>;
 }
 
 /**
@@ -136,6 +142,7 @@ export function compileSession(
 
   if (options.firstSessionOfPhase ?? day.isPhaseFirstSession) {
     for (const id of phase.firstSessionDrills ?? []) {
+      if (options.completedDrills?.has(id)) continue;
       const drill = drillsById.get(id);
       if (drill) appendDrill(segments, drill, 'skill', 0);
     }

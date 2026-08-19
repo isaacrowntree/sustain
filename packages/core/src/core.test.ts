@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { didgeridooPack as pack } from '@sustain/pack-didgeridoo';
 import { programDayFor } from './calendar.js';
 import { compileSession } from './compiler.js';
-import { emptyProgress, recordMetric, recordSession, recordDrillCompletion } from './progress.js';
+import {
+  completedDrillSet,
+  emptyProgress,
+  pendingFirstSessionDrills,
+  recordDrillCompletion,
+  recordMetric,
+  recordSession,
+} from './progress.js';
 import { unlockedDrills } from './unlocks.js';
 import { adherence } from './adherence.js';
 import { addDays } from './dates.js';
@@ -52,6 +59,26 @@ describe('compiler', () => {
       firstSessionOfPhase: true,
     })!;
     expect(withOverride.segments[0]!.drillId).toBe('baseline-recording');
+  });
+
+  it('keeps offering a one-off drill until it has actually been completed', () => {
+    const state = emptyProgress(pack.id, START);
+    const day = programDayFor(pack, START, addDays(START, 2));
+    const unlocked = unlockedDrills(pack, state);
+
+    // Outstanding: the baseline recording still leads the session.
+    expect(pendingFirstSessionDrills(state, pack.phases[0]!)).toContain('baseline-recording');
+    const first = compileSession(pack, day, unlocked, { firstSessionOfPhase: true })!;
+    expect(first.segments[0]!.drillId).toBe('baseline-recording');
+
+    // Once genuinely done it drops off, even if asked for again.
+    recordDrillCompletion(state, 'baseline-recording');
+    expect(pendingFirstSessionDrills(state, pack.phases[0]!)).toHaveLength(0);
+    const after = compileSession(pack, day, unlocked, {
+      firstSessionOfPhase: true,
+      completedDrills: completedDrillSet(state),
+    })!;
+    expect(after.segments.some((s) => s.drillId === 'baseline-recording')).toBe(false);
   });
 
   it('ramps session length across a phase', () => {
