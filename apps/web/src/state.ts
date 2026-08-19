@@ -11,33 +11,16 @@ import {
 } from '@sustain/core';
 import { idbGet, idbPut, PROGRESS_STORE } from './idb.js';
 
-const LEGACY_KEY_PREFIX = 'sustain:v1:';
-
 /**
  * Progress lives in IndexedDB — the browser's on-disk database — not
  * localStorage: no 5MB string ceiling, structured storage, and it
- * participates in persistent-storage protection. A legacy localStorage
- * record is migrated in on first load.
+ * participates in persistent-storage protection.
  */
 export class IndexedDBProgressStore implements ProgressStore {
   constructor(private packId: string) {}
 
-  async load(): Promise<ProgressState | null> {
-    const state = await idbGet<ProgressState>(PROGRESS_STORE, this.packId);
-    if (state) return state;
-
-    const legacy = localStorage.getItem(LEGACY_KEY_PREFIX + this.packId);
-    if (legacy) {
-      try {
-        const migrated = JSON.parse(legacy) as ProgressState;
-        await idbPut(PROGRESS_STORE, this.packId, migrated);
-        localStorage.removeItem(LEGACY_KEY_PREFIX + this.packId);
-        return migrated;
-      } catch {
-        return null;
-      }
-    }
-    return null;
+  load(): Promise<ProgressState | null> {
+    return idbGet<ProgressState>(PROGRESS_STORE, this.packId);
   }
 
   save(state: ProgressState): Promise<void> {
