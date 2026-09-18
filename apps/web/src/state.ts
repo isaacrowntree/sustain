@@ -108,9 +108,3 @@ export async function loadActiveSession(packId: string): Promise<ActiveSession |
   }
   return active;
 }
-
-/** Export progress as a downloadable JSON blob URL (data ownership). */
-export function exportProgress(state: ProgressState): string {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  return URL.createObjectURL(blob);
-}

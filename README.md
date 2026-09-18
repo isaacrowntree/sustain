@@ -11,7 +11,7 @@ No points. No levels. No streak anxiety. The progression *is* the curriculum: dr
 - **Instrument packs** are mostly data: metrics, a declarative curriculum (phases → drills → prerequisites), and an analyzer spec. Teachers can write packs without writing an app. See [`packages/pack-sdk`](packages/pack-sdk).
 - **The engine** ([`packages/core`](packages/core)) compiles a pack + a calendar date into today's session: warmup → skill → endurance → cooldown, ramping session length across each phase, with measured **assessments** at phase boundaries.
 - **The audio pipeline** ([`packages/audio`](packages/audio)) is tiered. Sessions run fine with no microphone at all (honor-system timer). Grant the mic and the world reacts to your sound; for monophonic instruments the McLeod Pitch Method verifies you're actually playing — credited minutes and auto-measured records, all processed locally in the browser. Nothing is uploaded, anywhere.
-- **The web app** ([`apps/web`](apps/web)) renders the session as a lane flowing toward you — long-tone segments are sustain bars you ride — and stores all progress in your browser (exportable JSON).
+- **The web app** ([`apps/web`](apps/web)) renders the session as a lane flowing toward you — long-tone segments are sustain bars you ride — and stores all progress in your browser. Export and import are one JSON file, recordings included, and the day-one and summit recordings play back to back.
 
 ## Instruments
 
@@ -41,7 +41,7 @@ pnpm build
 1. **Progression is the curriculum.** Unlock by demonstration, not by grinding a counter.
 2. **Measure, don't decorate.** Every number shown is a real measurement of skill or adherence.
 3. **Rest is part of the program.** Perfect weeks, not daily streaks. One missed day genuinely doesn't matter — [the habit research says so](https://onlinelibrary.wiley.com/doi/10.1002/ejsp.674).
-4. **Local-first.** Your practice data and recordings live in your browser and export as JSON.
+4. **Local-first.** Your practice data and recordings live in your browser and travel as one JSON file.
 5. **Packs are data.** If you can teach it as a progression of drills, you can encode it.
 
 ## License

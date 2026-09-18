@@ -161,6 +161,10 @@ button.see-all {
   padding: 11px 18px;
 }
 
+/* Your data, in and out. */
+.data-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.import-row { display: contents; }
+
 button.compare-link {
   align-self: flex-start;
   padding: 6px 0;

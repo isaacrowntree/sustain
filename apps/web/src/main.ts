@@ -33,6 +33,7 @@ import { renderComplete } from './ui/complete.js';
 import { renderProgram } from './ui/program.js';
 import { renderCompare } from './ui/compare.js';
 import { listRecordingKeys } from './recordings.js';
+import { importProgress } from './transfer.js';
 import type { SessionResult } from './session-player.js';
 
 const pack = didgeridooPack;
@@ -60,6 +61,9 @@ function showHome(): void {
       onMarkDone() {},
       onViewProgram() {},
       onCompare() {},
+      onImport(file) {
+        importFile(file);
+      },
     });
     return;
   }
@@ -77,6 +81,35 @@ function showHome(): void {
     onCompare() {
       showCompare();
     },
+    onImport(file) {
+      importFile(file);
+    },
+  });
+}
+
+/**
+ * Bring progress and recordings in from an export. Existing progress is
+ * only replaced after an explicit yes; a half-finished session is dropped
+ * because it belonged to the state being replaced.
+ */
+function importFile(file: File): void {
+  void importProgress(file, {
+    packId: pack.id,
+    store,
+    confirmOverwrite: (existing) =>
+      window.confirm(
+        `This browser already has ${existing.sessions.length} session${existing.sessions.length === 1 ? '' : 's'} of progress. ` +
+          'Replace it with the imported file? Recordings in the file are added; existing ones with the same key are overwritten.',
+      ),
+  }).then(async (result) => {
+    if (!result.ok) {
+      if (result.reason !== 'refused') window.alert(result.message);
+      return;
+    }
+    await clearActiveSession(pack.id);
+    current = result.state;
+    if (await reconcileRecordings(current)) await store.save(current);
+    showHome();
   });
 }
 

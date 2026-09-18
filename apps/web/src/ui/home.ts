@@ -12,7 +12,8 @@ import {
   type ISODate,
   type ProgressState,
 } from '@sustain/core';
-import { exportProgress, today } from '../state.js';
+import { today } from '../state.js';
+import { exportProgress } from '../transfer.js';
 import { el, fmtMinutes } from './format.js';
 
 const PHASE_CSS: Record<string, string> = {
@@ -31,6 +32,22 @@ export interface HomeCallbacks {
   onViewProgram(): void;
   /** Play the day-one recording and the summit recording back to back. */
   onCompare(): void;
+  /** Restore progress and recordings from an export file. */
+  onImport(file: File): void;
+}
+
+/** A ghost button that opens the file picker and hands the chosen file over. */
+function importButton(label: string, onImport: (file: File) => void): HTMLElement {
+  const input = el('input', { type: 'file', accept: 'application/json,.json', 'aria-label': label }) as HTMLInputElement;
+  input.hidden = true;
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (file) onImport(file);
+    input.value = '';
+  });
+  const btn = el('button', { class: 'ghost' }, label);
+  btn.addEventListener('click', () => input.click());
+  return el('div', { class: 'import-row' }, btn, input);
 }
 
 export function renderWelcome(root: HTMLElement, pack: InstrumentPack, cb: HomeCallbacks): void {
@@ -61,6 +78,7 @@ export function renderWelcome(root: HTMLElement, pack: InstrumentPack, cb: HomeC
         { class: 'footer-note' },
         'Starting on a practice day joins this week; starting on a rest day begins Monday.',
       ),
+      importButton('Import a Sustain export', cb.onImport),
     ),
   );
 }
@@ -237,15 +255,25 @@ export function renderHome(
   const compareBtn = el('button', { class: 'ghost compare-link' }, 'Hear day one beside the summit');
   compareBtn.addEventListener('click', cb.onCompare);
 
-  const exportBtn = el('button', { class: 'ghost' }, 'Export progress JSON');
+  // Everything — progress and recordings — in one file you own.
+  const exportBtn = el('button', { class: 'ghost' }, 'Export progress + recordings');
   exportBtn.addEventListener('click', () => {
-    const url = exportProgress(state);
-    const aEl = el('a', { href: url, download: `sustain-${pack.id}-progress.json` });
-    document.body.append(aEl);
-    aEl.click();
-    aEl.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Packing…';
+    void exportProgress(state)
+      .then((url) => {
+        const aEl = el('a', { href: url, download: `sustain-${pack.id}-${todayIso}.json` });
+        document.body.append(aEl);
+        aEl.click();
+        aEl.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      })
+      .finally(() => {
+        exportBtn.disabled = false;
+        exportBtn.textContent = 'Export progress + recordings';
+      });
   });
+  const importRow = importButton('Import from an export', cb.onImport);
 
   // The hero card carries the current phase's color.
   action.style.setProperty('--phase-c', PHASE_CSS[day.phase?.id ?? ''] ?? '#e8833a');
@@ -325,7 +353,7 @@ export function renderHome(
         programBtn,
         compareBtn,
       ),
-      exportBtn,
+      el('div', { class: 'data-row' }, exportBtn, importRow),
     ),
   );
 }
