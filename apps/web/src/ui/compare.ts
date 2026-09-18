@@ -27,6 +27,8 @@ interface Track {
   row: HTMLElement;
   fill: HTMLElement;
   time: HTMLElement;
+  /** Set when the last attempt to load or play it failed; the note stays up after stop. */
+  failed: boolean;
 }
 
 function trackRow(label: string, ref: RecordingRef | null, missingNote: string): Track {
@@ -44,7 +46,7 @@ function trackRow(label: string, ref: RecordingRef | null, missingNote: string):
     el('div', { class: 'compare-bar', role: 'progressbar', 'aria-label': `${label} playback` }, fill),
     time,
   );
-  return { label, ref, missingNote, row, fill, time };
+  return { label, ref, missingNote, row, fill, time, failed: false };
 }
 
 /**
@@ -97,6 +99,10 @@ export async function renderCompare(
   let playing = false;
   let queue: Track[] = [];
   let currentTrack: Track | null = null;
+  // Bumped on every stop and start, so a load that was in flight when the
+  // user pressed Stop or Back finds itself stale when it resolves and
+  // leaves the audio element alone.
+  let generation = 0;
 
   const setActive = (track: Track | null) => {
     for (const t of tracks) t.row.classList.toggle('playing', t === track);
@@ -106,6 +112,7 @@ export async function renderCompare(
 
   const stop = () => {
     playing = false;
+    generation++;
     queue = [];
     audio.pause();
     audio.removeAttribute('src');
@@ -114,7 +121,8 @@ export async function renderCompare(
     setActive(null);
     for (const t of tracks) {
       t.fill.style.width = '0%';
-      if (t.ref) t.time.textContent = '';
+      // A failure note is the one thing worth keeping on screen after a stop.
+      if (t.ref && !t.failed) t.time.textContent = '';
     }
     playBtn.textContent = playable.length === 2 ? 'Play both, back to back' : `Play ${playable[0]?.label.toLowerCase() ?? ''}`;
   };
@@ -125,8 +133,12 @@ export async function renderCompare(
       stop();
       return;
     }
+    const gen = generation;
+    const stale = () => !playing || gen !== generation;
     const blob = await deps.load(next.ref.key);
+    if (stale()) return;
     if (!blob) {
+      next.failed = true;
       next.time.textContent = 'recording missing from storage';
       next.row.classList.add('missing');
       return playNext();
@@ -138,6 +150,8 @@ export async function renderCompare(
     try {
       await audio.play();
     } catch {
+      if (stale()) return;
+      next.failed = true;
       next.time.textContent = 'could not play this recording';
       return playNext();
     }
@@ -161,7 +175,12 @@ export async function renderCompare(
       return;
     }
     playing = true;
+    generation++;
     playBtn.textContent = 'Stop';
+    for (const t of playable) {
+      t.failed = false;
+      t.time.textContent = '';
+    }
     queue = [...playable];
     void playNext();
   });

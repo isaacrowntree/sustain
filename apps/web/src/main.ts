@@ -110,6 +110,11 @@ function importFile(file: File): void {
     current = result.state;
     if (await reconcileRecordings(current)) await store.save(current);
     showHome();
+  }).catch((err: unknown) => {
+    // A corrupt recording or a storage failure: say so, and leave the home
+    // screen as it was so the next attempt has somewhere to start from.
+    window.alert(`Import failed. ${err instanceof Error ? err.message : String(err)}`);
+    showHome();
   });
 }
 

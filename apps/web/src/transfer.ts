@@ -104,6 +104,24 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * The shape the home screen and the core's adherence maths read from a
+ * session: a date to place it on the calendar, a day index to place it in
+ * the programme, and the numbers the tallies add up. The optional fields
+ * are checked only when present, as older exports may lack them.
+ */
+function isSessionRecord(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  if (typeof v.date !== 'string' || typeof v.dayIndex !== 'number') return false;
+  if (typeof v.completedSeconds !== 'number' || typeof v.playSeconds !== 'number') return false;
+  if (typeof v.verified !== 'boolean' || typeof v.isBoss !== 'boolean') return false;
+  if (v.completedDrillIds !== undefined) {
+    if (!Array.isArray(v.completedDrillIds) || !v.completedDrillIds.every((id) => typeof id === 'string')) return false;
+  }
+  if (v.counted !== undefined && typeof v.counted !== 'boolean') return false;
+  return true;
+}
+
+/**
  * Check a parsed file is a bundle this build can read. Returns the reason
  * it isn't, or null when it is — the caller turns that into a message.
  */
@@ -130,6 +148,10 @@ export function validateBundle(data: unknown): { bundle: ExportBundle } | { erro
     !isRecord(progress.selfReports)
   ) {
     return { error: 'The progress in this export is malformed.' };
+  }
+  const badSession = progress.sessions.findIndex((s) => !isSessionRecord(s));
+  if (badSession !== -1) {
+    return { error: `Session ${badSession + 1} in this export's progress is malformed.` };
   }
   const recordings = data.recordings ?? [];
   if (!Array.isArray(recordings)) return { error: 'The recordings in this export are malformed.' };
@@ -164,6 +186,12 @@ export type ImportResult =
 /**
  * Restore a bundle: progress into the progress store, recordings back into
  * the recordings store. Existing progress is never silently replaced.
+ *
+ * The import is all-or-nothing as far as validation goes: every recording
+ * is decoded and the progress checked before a single byte is written, so
+ * a corrupt file leaves the browser exactly as it was. A storage failure
+ * partway through the writes is rethrown with what had been written so far;
+ * it cannot be rolled back, but it is never swallowed.
  */
 export async function importProgress(file: Blob, deps: ImportDeps): Promise<ImportResult> {
   const io = deps.recordings ?? defaultRecordingIO;
@@ -190,12 +218,32 @@ export async function importProgress(file: Blob, deps: ImportDeps): Promise<Impo
     return { ok: false, reason: 'refused', message: 'Import cancelled; your existing progress is untouched.' };
   }
 
-  let restored = 0;
+  // Decode everything first: a bad string anywhere means nothing is written.
+  const decoded: { key: string; blob: Blob }[] = [];
   for (const r of bundle.recordings) {
     if (!r.key.startsWith(`${deps.packId}:`)) continue;
-    await io.save(r.key, base64ToBlob(r.base64, r.mimeType));
-    restored++;
+    let blob: Blob;
+    try {
+      blob = base64ToBlob(r.base64, r.mimeType);
+    } catch {
+      throw new Error(`recording ${r.key} is not valid base64`);
+    }
+    decoded.push({ key: r.key, blob });
   }
-  await deps.store.save(bundle.progress);
+
+  let restored = 0;
+  try {
+    for (const { key, blob } of decoded) {
+      await io.save(key, blob);
+      restored++;
+    }
+    await deps.store.save(bundle.progress);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `Import failed while writing to storage (${restored} of ${decoded.length} recordings written, progress not saved): ${detail}`,
+      { cause },
+    );
+  }
   return { ok: true, state: bundle.progress, recordingsRestored: restored };
 }

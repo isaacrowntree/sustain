@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { didgeridooPack as pack } from '@sustain/pack-didgeridoo';
 import { emptyProgress, addDays } from '@sustain/core';
 import { baselineDrillFor, parseRecordingKey, selectComparison, summitDrillFor } from './compare.js';
@@ -94,6 +94,77 @@ describe('renderCompare', () => {
     const play = root.querySelector('button.start-btn') as HTMLButtonElement;
     expect(play.textContent).toBe('Play day-one recording');
     expect(play.disabled).toBe(false);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The view's audio element, which it never appends to the page. */
+  function captureAudio(): () => HTMLAudioElement {
+    let audio: HTMLAudioElement | null = null;
+    const real = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, opts?: ElementCreationOptions) => {
+      const node = real(tag, opts);
+      if (tag === 'audio') audio = node as HTMLAudioElement;
+      return node;
+    });
+    return () => audio!;
+  }
+
+  it('stop before the load resolves leaves the audio element untouched', async () => {
+    const created: string[] = [];
+    const revoked: string[] = [];
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: (_: Blob) => {
+        const u = `blob:${created.length}`;
+        created.push(u);
+        return u;
+      },
+      revokeObjectURL: (u: string) => revoked.push(u),
+    });
+    let resolveLoad!: (b: Blob | null) => void;
+    const deps: CompareDeps = {
+      listKeys: async () => [`${P}:2026-08-24:baseline-recording`],
+      load: () => new Promise((r) => (resolveLoad = r)),
+    };
+    const getAudio = captureAudio();
+    const root = document.createElement('div');
+    await renderCompare(root, pack, emptyProgress(P, '2026-08-24'), { onBack() {} }, deps);
+    const audio = getAudio();
+    const play = root.querySelector('button.start-btn') as HTMLButtonElement;
+
+    play.click();
+    expect(play.textContent).toBe('Stop');
+    play.click(); // stop, while the load is still in flight
+    expect(play.textContent).toBe('Play day-one recording');
+    resolveLoad(new Blob(['x'], { type: 'audio/webm' }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(audio.src).toBe('');
+    expect(audio.getAttribute('src')).toBeNull();
+    expect(root.querySelector('.compare-track.playing')).toBeNull();
+    expect(root.querySelector('.compare-now')?.textContent).toBe('');
+    expect(created.filter((u) => !revoked.includes(u))).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the failure note on screen after the last track fails', async () => {
+    const root = document.createElement('div');
+    const deps: CompareDeps = {
+      listKeys: async () => [`${P}:2026-08-24:baseline-recording`],
+      load: async () => null,
+    };
+    await renderCompare(root, pack, emptyProgress(P, '2026-08-24'), { onBack() {} }, deps);
+    const play = root.querySelector('button.start-btn') as HTMLButtonElement;
+    play.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const baseline = root.querySelector('.compare-track')!;
+    expect(baseline.querySelector('.compare-time')?.textContent).toBe('recording missing from storage');
+    expect(baseline.classList.contains('missing')).toBe(true);
+    expect(play.textContent).toBe('Play day-one recording');
   });
 
   it('disables play when nothing has been recorded', async () => {

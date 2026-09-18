@@ -128,6 +128,60 @@ describe('import', () => {
     expect(await bytesOf(restored!)).toEqual([...audio]);
   });
 
+  it('writes nothing when any recording is not valid base64', async () => {
+    const store = new IndexedDBProgressStore(P);
+    const good = { key: BASELINE_KEY, mimeType: 'audio/webm', base64: btoa('ok') };
+    const bad = { key: `${P}:2026-12-11:summit-recording`, mimeType: 'audio/webm', base64: 'abc$' };
+    const bundle = { version: 1, exportedAt: '', progress: sampleState(), recordings: [good, bad] };
+
+    await expect(importProgress(fileOf(bundle), { packId: P, store, confirmOverwrite: () => true })).rejects.toThrow(
+      `recording ${bad.key} is not valid base64`,
+    );
+    expect(await listRecordingKeys()).toEqual([]);
+    expect(await store.load()).toBeNull();
+  });
+
+  it('refuses a malformed session before touching storage', async () => {
+    const store = new IndexedDBProgressStore(P);
+    const save = vi.fn(async () => {});
+    const confirm = vi.fn(() => true);
+    const progress = { ...sampleState(), sessions: [null] };
+    const r = await importProgress(fileOf({ version: 1, exportedAt: '', progress, recordings: [] }), {
+      packId: P,
+      store,
+      confirmOverwrite: confirm,
+      recordings: { listKeys: async () => [], load: async () => null, save },
+    });
+    expect(r).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(r.ok === false && r.message).toMatch(/Session 1 .*malformed/);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(await store.load()).toBeNull();
+  });
+
+  it('surfaces a storage failure partway through the writes', async () => {
+    const store = new IndexedDBProgressStore(P);
+    const rec = (key: string) => ({ key, mimeType: 'audio/webm', base64: btoa('ok') });
+    const bundle = {
+      version: 1,
+      exportedAt: '',
+      progress: sampleState(),
+      recordings: [rec(BASELINE_KEY), rec(`${P}:2026-12-11:summit-recording`)],
+    };
+    const save = vi.fn(async (key: string) => {
+      if (key.endsWith('summit-recording')) throw new Error('QuotaExceededError');
+    });
+    await expect(
+      importProgress(fileOf(bundle), {
+        packId: P,
+        store,
+        confirmOverwrite: () => true,
+        recordings: { listKeys: async () => [], load: async () => null, save },
+      }),
+    ).rejects.toThrow(/1 of 2 recordings written, progress not saved.*QuotaExceededError/);
+    expect(await store.load()).toBeNull();
+  });
+
   it('does not overwrite existing progress unless confirmed', async () => {
     const store = new IndexedDBProgressStore(P);
     const existing = emptyProgress(P, '2026-06-01');
