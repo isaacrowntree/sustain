@@ -31,6 +31,7 @@ import { renderHome, renderWelcome } from './ui/home.js';
 import { renderSession } from './ui/session.js';
 import { renderComplete } from './ui/complete.js';
 import { renderProgram } from './ui/program.js';
+import { renderCompare } from './ui/compare.js';
 import { listRecordingKeys } from './recordings.js';
 import type { SessionResult } from './session-player.js';
 
@@ -58,6 +59,7 @@ function showHome(): void {
       onStartSession() {},
       onMarkDone() {},
       onViewProgram() {},
+      onCompare() {},
     });
     return;
   }
@@ -72,7 +74,15 @@ function showHome(): void {
     onViewProgram() {
       showProgram();
     },
+    onCompare() {
+      showCompare();
+    },
   });
+}
+
+function showCompare(): void {
+  if (!current) return showHome();
+  void renderCompare(root, pack, current, { onBack: showHome });
 }
 
 /**

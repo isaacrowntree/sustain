@@ -29,6 +29,8 @@ export interface HomeCallbacks {
   onMarkDone(minutes: number): void;
   /** Open the full sixteen-week curriculum. */
   onViewProgram(): void;
+  /** Play the day-one recording and the summit recording back to back. */
+  onCompare(): void;
 }
 
 export function renderWelcome(root: HTMLElement, pack: InstrumentPack, cb: HomeCallbacks): void {
@@ -232,6 +234,9 @@ export function renderHome(
   const programBtn = el('button', { class: 'secondary see-all' }, `See all ${pack.schedule.totalWeeks} weeks`);
   programBtn.addEventListener('click', cb.onViewProgram);
 
+  const compareBtn = el('button', { class: 'ghost compare-link' }, 'Hear day one beside the summit');
+  compareBtn.addEventListener('click', cb.onCompare);
+
   const exportBtn = el('button', { class: 'ghost' }, 'Export progress JSON');
   exportBtn.addEventListener('click', () => {
     const url = exportProgress(state);
@@ -318,6 +323,7 @@ export function renderHome(
         journeyMap(pack, state),
         tally,
         programBtn,
+        compareBtn,
       ),
       exportBtn,
     ),

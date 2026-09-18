@@ -161,6 +161,52 @@ button.see-all {
   padding: 11px 18px;
 }
 
+button.compare-link {
+  align-self: flex-start;
+  padding: 6px 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-size: 0.9rem;
+}
+
+/* ---- Before and after: two recordings, one after the other ---- */
+.compare-tracks { display: flex; flex-direction: column; gap: 22px; }
+.compare-track { display: flex; flex-direction: column; gap: 8px; }
+.compare-track.missing .compare-bar { opacity: 0.35; }
+.compare-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.compare-label {
+  font-family: var(--display);
+  font-size: 1.2rem;
+  font-weight: 550;
+  transition: color 0.2s ease;
+}
+.compare-track.playing .compare-label { color: var(--ember-hot); }
+.compare-date, .compare-time {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.compare-bar {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(242, 232, 217, 0.12);
+}
+.compare-bar .fill {
+  position: absolute;
+  left: 0; top: 0;
+  height: 3px;
+  width: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--ember), var(--ember-hot));
+  box-shadow: 0 0 12px var(--ember);
+  transition: width 0.25s linear;
+}
+.compare-stage { align-items: flex-start; }
+.compare-now { min-height: 1.4em; }
+
 /* ---- Programme browser ---- */
 .phase-card {
   border-left: 2px solid var(--phase-c, var(--ember));
