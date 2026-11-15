@@ -30,10 +30,10 @@ If that's why you're here: **the practice is the treatment.** Sustain doesn't tr
 ## Running it
 
 ```sh
-pnpm install
-pnpm dev        # web app on http://localhost:5173
-pnpm test       # engine, pack, and web app tests
-pnpm build
+bun install
+bun run dev     # web app on http://localhost:5173
+bun run test    # engine, pack, and web app tests
+bun run build
 ```
 
 ## Design principles

@@ -5,10 +5,10 @@ Contributions are welcome — especially **instrument packs** and the **polyphon
 ## Setup
 
 ```sh
-pnpm install
-pnpm test        # vitest across all packages
-pnpm typecheck
-pnpm dev         # web app
+bun install
+bun run test    # vitest across all packages
+bun run typecheck
+bun run dev     # web app
 ```
 
 ## Adding an instrument pack
